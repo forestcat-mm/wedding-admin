@@ -580,3 +580,25 @@ details.help[open] summary{margin-bottom:2px}
 .tlist td.num,.tlist th.num{text-align:right}
 .tlist td.act{text-align:right}
 .tlist td.act .btn{margin-left:4px}
+
+/* ---- 受付（2026-09-25） ---- */
+#noperm .msg{color:var(--enji);font-size:13px;margin:0 0 16px}
+#noperm .btn{width:100%;background:var(--ink);color:#fff;padding:11px;letter-spacing:.2em;text-align:center}
+.gtbl col.c-rcpt{width:84px}
+.gtbl td.rcpt{text-align:center;white-space:nowrap}
+.gtbl td.rcpt b{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.06em;display:block;line-height:1.1}
+.gtbl td.rcpt small{display:block;font-size:10.5px;color:var(--ink2)}
+.gtbl td.rcpt .tag{margin:2px 0 0}
+#rt-table td code{font-size:12px}
+#rt-table td.url{white-space:nowrap}
+#rt-table tr.inactive td{color:var(--ink2)}
+.rcitems{border:1px solid var(--line);padding:8px 10px;background:#FBF9F5}
+.rcitems .ri{display:grid;grid-template-columns:1fr 1.4fr 56px 28px;gap:6px;align-items:center;margin-bottom:6px}
+.rcitems .ri input{border:1px solid var(--line);padding:5px 7px;background:#fff;font-size:12.5px;width:100%}
+.rcitems .ri .del{background:none;border:0;color:var(--enji);cursor:pointer;font-size:14px}
+.rcitems .ri small.st{grid-column:1/5;font-size:10.5px;color:var(--ok);margin-top:-4px}
+.rcitems .add{display:flex;gap:6px;align-items:center;margin-top:4px;flex-wrap:wrap}
+.rcitems .add .btn{white-space:nowrap;flex:none}
+.rcitems .add .note{flex:1 1 100%}
+.rcitems .add select{border:1px solid var(--line);padding:5px 7px;background:#fff;font-size:12.5px}
+#m-qr-box img{width:240px;height:240px;image-rendering:pixelated;border:1px solid var(--line);margin:10px auto}

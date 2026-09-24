@@ -1,7 +1,22 @@
 name = "wedding-admin"
+main = "src/worker.js"
 compatibility_date = "2026-09-24"
 
 [assets]
 directory = "./public"
+binding = "ASSETS"
 html_handling = "auto-trailing-slash"
 not_found_handling = "404-page"
+# 受付の短縮URLと API だけ Worker が先に受ける。それ以外は静的ファイル
+run_worker_first = ["/r/*", "/api/*"]
+
+[vars]
+SUPABASE_URL = "https://cvnqnvnppvfhwmrehagt.supabase.co"
+SUPABASE_ANON_KEY = "sb_publishable_ZYwTP155dx57wEopKpezNA_LR1IOjID"
+# 管理者として /api/reception/* を使えるメール（カンマ区切り）。空なら ADMIN_EMAIL_DOMAIN のドメインで判定
+ADMIN_EMAILS = ""
+ADMIN_EMAIL_DOMAIN = "forest-mm.com"
+
+# Secrets（wrangler secret put で登録。ここには書かない）
+#   SUPABASE_SERVICE_ROLE_KEY   Supabase のサービスロールキー
+#   RECEPTION_COOKIE_SECRET     受付 Cookie の HMAC 署名鍵（32 バイト以上のランダム値）

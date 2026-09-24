@@ -216,6 +216,8 @@ const S = {
   photoSel: new Set(), photos: [], external: [],
   signed: new Map(),
   titles: [],                       // A1: 肩書きの選択肢（title_options）
+  items: [], itemsOfGuest: new Map(),   // 受付：お渡し物（reception_items）
+  tokens: [],                          // 受付トークン
 };
 
 /* ============================== A. 肩書き ============================== */
@@ -291,8 +293,15 @@ function wireTitleNew(sel) {
 /* ============================== 認証 ============================== */
 async function boot() {
   const { data } = await sb.auth.getSession();
-  if (data.session) { await enter(data.session.user); }
-  else $('#login').classList.remove('off');
+  if (data.session) { await enter(data.session.user); return; }
+  /* 受付トークンの Cookie で開いた端末には、ログインフォームではなく権限不足の案内を出す */
+  let via = null;
+  try {
+    const res = await fetch('/api/reception/me', { credentials: 'same-origin', cache: 'no-store' });
+    if (res.ok) via = (await res.json()).via;
+  } catch {}
+  $('#login').classList.remove('off');
+  if (via === 'token') { $('#login .lbox:not(#noperm)').hidden = true; $('#noperm').hidden = false; }
 }
 async function enter(user) {
   S.me = user;
@@ -324,11 +333,12 @@ async function loadAll() {
     sb.from('replies_admin').select('*').order('received_at', { ascending: false }),
     sb.from('reply_people').select('*').order('idx'),
     sb.from('share_links').select('*'),
+    sb.from('reception_items').select('*').order('sort').order('created_at'),
   ];
   const res = await Promise.all(q);
   const bad = res.find(r => r.error);
   if (bad) { toast('読み込みに失敗しました：' + bad.error.message, 'err'); return; }
-  [S.guests, S.circles, S.guestCircles, S.replies, S.people, S.shares] = res.map(r => r.data || []);
+  [S.guests, S.circles, S.guestCircles, S.replies, S.people, S.shares, S.items] = res.map(r => r.data || []);
   await loadTitles();
   await loadEventSettings();       // 基本情報（新郎新婦の名前・全体の申し送り）
   index();
@@ -373,6 +383,11 @@ function index() {
   }
   for (const arr of S.repliesOfGuest.values())
     arr.sort((a, b) => new Date(a.received_at) - new Date(b.received_at));
+  S.itemsOfGuest = new Map();          // 招待者 → 受付でお渡しする物
+  for (const it of S.items) {
+    if (!S.itemsOfGuest.has(it.guest_id)) S.itemsOfGuest.set(it.guest_id, []);
+    S.itemsOfGuest.get(it.guest_id).push(it);
+  }
   S.replyOfGuest = new Map();          // 招待者 → 有効な回答（1件）
   for (const [gid, arr] of S.repliesOfGuest) {
     const live = arr.find(replyLive);
@@ -447,6 +462,7 @@ function go(v) {
   $$('#nav button').forEach(x => x.classList.toggle('on', x.dataset.v === v));
   $$('.view').forEach(s => s.classList.toggle('on', s.id === 'v-' + v));
   window.scrollTo(0, 0);
+  if (v === 'reception') loadTokens();
 }
 $$('.modal').forEach(m => m.addEventListener('click', e => { if (e.target === m) m.classList.remove('on'); }));
 document.addEventListener('keydown', e => {
@@ -514,6 +530,8 @@ function stats() {
             none: liveGuests.filter(g => !g.side).length },
     lineJoined: liveGuests.filter(g => g.line_joined).length,
     wechatJoined: liveGuests.filter(g => g.wechat_joined).length,
+    checkedIn: liveGuests.filter(g => g.checked_in_at).length,
+    unhanded: S.items.filter(it => !it.handed_at && S.byGuest.get(it.guest_id) && !S.byGuest.get(it.guest_id).deleted_at).length,
   };
 }
 function circleStats() {
@@ -570,7 +588,13 @@ function renderDash() {
     <div class="card"><div class="k">WeChatグループ 加入率</div>
       <div class="v">${rate(st.wechatJoined, st.invited)}<small>%</small></div>
       <div class="note">${st.wechatJoined} / ${st.invited} 名</div>
-      <div class="bar"><i style="width:${rate(st.wechatJoined, st.invited)}%"></i></div></div>`;
+      <div class="bar"><i style="width:${rate(st.wechatJoined, st.invited)}%"></i></div></div>
+    <div class="card${st.checkedIn ? '' : ''}"><div class="k">当日の受付</div>
+      <div class="v">${st.checkedIn}<small>/ ${st.invited} 名 受付済</small></div>
+      <div class="bar"><i style="width:${rate(st.checkedIn, st.invited)}%"></i></div></div>
+    <div class="card${st.unhanded ? ' warn' : ''}"><div class="k">未渡しのお渡し物</div>
+      <div class="v">${st.unhanded}<small>件</small></div>
+      <div class="note">お車代・お礼など（ゲスト編集で登録）</div></div>`;
 
   /* A1: 予算カード（回答ベース） */
   const bc = $('#d-budget');
@@ -745,7 +769,7 @@ function passFilter(row, f) {
   if (row.kind === 'companion') return true;   // 親で判定
   const g = row.guest, r = row.reply, p = row.person;
   if (f.q) {
-    const hay = norm([fullName(g), latinName(g), g?.email, g?.messenger_id,
+    const hay = norm([fullName(g), latinName(g), g?.email, g?.messenger_id, g?.reception_id,
       fullName(p), latinName(p), r?.email, r?.messenger].join(' '));
     if (!hay.includes(norm(f.q))) return false;
   }
@@ -951,6 +975,15 @@ function memoCell(g, r) {
   return (memo ? `<span class="ell" title="${esc(memo)}">${esc(memo)}</span>` : '') +
     (photos ? `<small><button class="btn link" data-act="photos" data-id="${r.id}">📷 ${photos}枚</button></small>` : '');
 }
+/* 受付ID と当日の受付状態 */
+function receptionCell(g) {
+  if (!g) return '';
+  const items = S.itemsOfGuest.get(g.id) || [];
+  const left = items.filter(i => !i.handed_at).length;
+  return `<b>${esc(g.reception_id || '—')}</b>`
+    + (g.checked_in_at ? `<span class="tag ok" title="${esc(g.checked_in_by || '')}">受付済 ${esc(fmtDT(g.checked_in_at).slice(-5))}</span>` : '<small>未受付</small>')
+    + (items.length ? `<small>${left ? `未渡し ${left}/${items.length}` : `お渡し済 ${items.length}`}</small>` : '');
+}
 function rowHTML(row) {
   const key = rowKey(row);
   const g = row.guest, r = row.reply, p = row.person;
@@ -962,6 +995,7 @@ function rowHTML(row) {
   if (row.kind === 'companion') {
     return `<tr class="${cls}"><td class="ck">${sideBand(rowSide(row))}<input type="checkbox" class="chk" data-k="${key}"></td>
       <td class="n"><b>${cellTxt(fullName(p))}</b><small>${cellTxt(latinName(p).toUpperCase())}</small></td>
+      <td></td>
       <td class="ctr">${attTag(p?.attending)}<small>${esc(kindOf(p))}</small></td>
       <td></td><td>${dietCell(p)}</td><td></td><td></td><td></td>
       <td class="act"><button class="btn s o ic" data-act="edit" data-id="${r.id}" title="編集">✎</button></td></tr>`;
@@ -987,6 +1021,7 @@ function rowHTML(row) {
   return `<tr class="${cls}"><td class="ck">${sideBand(rowSide(row))}<input type="checkbox" class="chk" data-k="${key}"></td>
     <td class="n"><b>${esc(primary)}${nameIcons(g, r)}${row.kind === 'guest' ? dupTag(g) : ''}${proxyTag}${dupBadge}</b>
       ${sub2.map(x => `<small>${x}</small>`).join('')}${circleLine(g)}</td>
+    <td class="rcpt">${receptionCell(g)}</td>
     <td class="ctr">${p ? attTag(p.attending) : '<span class="tag grey">未回答</span>'}<small>${esc(p ? kindOf(p) : '')}</small></td>
     <td>${contactCell(g, r)}</td>
     <td>${dietCell(p)}</td>
@@ -1145,8 +1180,49 @@ function guestTabHTML(g) {
       <input id="gf-gift" list="gf-giftlist" value="${esc(g?.gift_note || '')}" placeholder="品目名（自由入力可）">
       <datalist id="gf-giftlist">${extNames().map(n => `<option value="${esc(n)}"></option>`).join('')}</datalist></div>
     <div class="f"><label>メモ</label><textarea id="gf-note" rows="2">${esc(g?.note || '')}</textarea></div>
+    <div class="f"><label>受付でお渡しする物${g?.reception_id ? `　<span class="note">受付ID ${esc(g.reception_id)}${g.checked_in_at ? '・受付済 ' + esc(fmtDT(g.checked_in_at)) : ''}</span>` : ''}</label>
+      <div class="rcitems" id="gf-items">${(g ? (S.itemsOfGuest.get(g.id) || []) : []).map(itemRowHTML).join('')}
+        <div class="add"><select id="gf-item-preset">${RC_PRESETS.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('')}</select>
+          <button type="button" class="btn s o" id="gf-item-add">＋ 追加</button>
+          <span class="note">ラベル・備考・並び順。当日の受付画面で「お渡し済」にします</span></div></div></div>
     <div class="row" style="margin:0"><span class="sp"></span>
       <button class="btn o" data-close>キャンセル</button><button class="btn" id="gf-save">保存</button></div>`;
+}
+const RC_PRESETS = ['お車代', 'お礼', 'その他'];
+function itemRowHTML(it, i) {
+  return `<div class="ri" data-id="${esc(it.id || '')}">
+    <input class="ri-label" value="${esc(it.label || '')}" placeholder="ラベル" maxlength="40">
+    <input class="ri-note" value="${esc(it.note || '')}" placeholder="備考（金額・封筒の色など）" maxlength="120">
+    <input class="ri-sort" type="number" step="1" value="${it.sort ?? (i ?? 0)}" title="並び順">
+    <button type="button" class="del" title="削除">×</button>
+    ${it.handed_at ? `<small class="st">お渡し済 ${esc(fmtDT(it.handed_at))}${it.handed_by ? '・' + esc(it.handed_by) : ''}</small>` : ''}
+  </div>`;
+}
+function wireItemsEditor() {
+  const box = $('#gf-items'); if (!box) return;
+  $('#gf-item-add').addEventListener('click', () => {
+    const preset = $('#gf-item-preset').value;
+    const n = $$('.ri', box).length;
+    $('.add', box).insertAdjacentHTML('beforebegin', itemRowHTML({ label: preset === 'その他' ? '' : preset, note: '', sort: n }, n));
+    const last = $$('.ri', box).pop(); $('.ri-label', last).focus();
+  });
+  box.addEventListener('click', e => { const b = e.target.closest('.del'); if (b) b.closest('.ri').remove(); });
+}
+/* 受付でお渡しする物の保存：残っている行は upsert、消えた行は delete */
+async function saveGuestItems(gid) {
+  const box = $('#gf-items'); if (!box) return;
+  const before = S.itemsOfGuest.get(gid) || [];
+  const rows = $$('.ri', box).map((el, i) => ({
+    id: el.dataset.id || null, guest_id: gid,
+    label: $('.ri-label', el).value.trim(), note: $('.ri-note', el).value.trim() || null,
+    sort: Math.round(Number($('.ri-sort', el).value) || i),
+  })).filter(r => r.label);
+  const keep = new Set(rows.map(r => r.id).filter(Boolean));
+  const gone = before.filter(it => !keep.has(it.id)).map(it => it.id);
+  if (gone.length) { const { error } = await sb.from('reception_items').delete().in('id', gone); if (error) throw error; }
+  const ups = rows.filter(r => r.id), ins = rows.filter(r => !r.id).map(({ id, ...r }) => r);
+  for (const r of ups) { const { error } = await sb.from('reception_items').update({ label: r.label, note: r.note, sort: r.sort }).eq('id', r.id); if (error) throw error; }
+  if (ins.length) { const { error } = await sb.from('reception_items').insert(ins); if (error) throw error; }
 }
 function replyTabHTML(r) {
   const me = person0(r.id);
@@ -1251,7 +1327,7 @@ function openEditModal(id, kind) {
     $('#tab-r').classList.toggle('on', b.dataset.tab === 'r');
   }));
   if (canG) { wireTagCreate($('#gf-newtag'), $('#gf-addtag'), $('#gf-chips'));
-              wireTitleNew($('#gf-title')); wireGuestSave(g); }
+              wireTitleNew($('#gf-title')); wireItemsEditor(); wireGuestSave(g); }
   if (r) { historyHTML(r).then(t => { const el = $('#rf-hist'); if (el) el.textContent = t; });
            wireKidOnly(box); wireReplySave(r); }
   else if (canNew) wireNewReply(g);
@@ -1284,6 +1360,8 @@ function wireGuestSave(g) {
     const want = $$('#gf-chips input:checked').map(i => i.value);
     await sb.from('guest_circles').delete().eq('guest_id', gid);
     if (want.length) await sb.from('guest_circles').insert(want.map(cid => ({ guest_id: gid, circle_id: cid })));
+    try { await saveGuestItems(gid); }
+    catch (e) { toast('お渡し物の保存に失敗：' + e.message, 'err'); }
     toast('保存しました', 'ok');
     closeModal('m-guest'); await loadAll();
   });
@@ -5831,3 +5909,80 @@ function openEventModal() {
   });
 }
 $('#ev-open').addEventListener('click', openEventModal);
+
+/* ============================================================
+   受付トークン（reception_tokens）。仕様：00_spec/reception.md
+   ============================================================ */
+const RC_CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';   /* 0 O 1 l I を除く */
+function newReceptionCode() {
+  const buf = new Uint8Array(8); crypto.getRandomValues(buf);
+  return [...buf].map(b => RC_CODE_CHARS[b % RC_CODE_CHARS.length]).join('');
+}
+const shortURL = code => `${location.origin}/r/${code}`;
+const tokenAlive = t => t.is_active && (!t.expires_at || new Date(t.expires_at) > new Date());
+async function loadTokens() {
+  const { data, error } = await sb.from('reception_tokens').select('*').order('created_at', { ascending: false });
+  if (error) { toast('受付トークンの読み込みに失敗：' + error.message, 'err'); return; }
+  S.tokens = data || [];
+  renderTokens();
+}
+function renderTokens() {
+  const body = $('#rt-body');
+  body.innerHTML = S.tokens.map(t => `<tr class="${tokenAlive(t) ? '' : 'inactive'}" data-id="${esc(t.id)}">
+    <td><b>${esc(t.label)}</b></td>
+    <td class="url"><code>${esc(shortURL(t.code))}</code> <button class="btn s o" data-copy="${esc(t.code)}">コピー</button></td>
+    <td><button class="btn s o" data-qr="${esc(t.code)}">QR</button></td>
+    <td><label class="chk1"><input type="checkbox" data-toggle="${esc(t.id)}"${t.is_active ? ' checked' : ''}><span>${t.is_active ? (tokenAlive(t) ? '有効' : '期限切れ') : '無効'}</span></label></td>
+    <td>${t.expires_at ? esc(fmtDT(t.expires_at)) : '無期限'}</td>
+    <td>${t.last_used_at ? esc(fmtDT(t.last_used_at)) : '—'}</td>
+    <td>${esc(fmtDT(t.created_at))}</td>
+    <td class="act"><button class="btn s enji" data-del="${esc(t.id)}">削除</button></td></tr>`).join('')
+    || '<tr><td colspan="8" class="note">まだ発行していません</td></tr>';
+  $$('[data-copy]', body).forEach(b => b.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(shortURL(b.dataset.copy)); toast('URLをコピーしました', 'ok'); }
+    catch { toast('コピーできませんでした。URLを長押しして選択してください', 'err'); }
+  }));
+  $$('[data-qr]', body).forEach(b => b.addEventListener('click', () => openQR(b.dataset.qr)));
+  $$('[data-toggle]', body).forEach(c => c.addEventListener('change', async () => {
+    const { error } = await sb.from('reception_tokens').update({ is_active: c.checked }).eq('id', c.dataset.toggle);
+    if (error) { toast('変更に失敗：' + error.message, 'err'); c.checked = !c.checked; return; }
+    toast(c.checked ? '有効にしました' : '無効にしました。その端末は次の操作から使えません', 'ok');
+    await loadTokens();
+  }));
+  $$('[data-del]', body).forEach(b => b.addEventListener('click', async () => {
+    const t = S.tokens.find(x => x.id === b.dataset.del);
+    if (!confirm(`「${t?.label ?? ''}」を削除します。このリンクは使えなくなります。`)) return;
+    const { error } = await sb.from('reception_tokens').delete().eq('id', b.dataset.del);
+    if (error) { toast('削除に失敗：' + error.message, 'err'); return; }
+    toast('削除しました', 'ok'); await loadTokens();
+  }));
+}
+async function openQR(code) {
+  const box = $('#m-qr-box');
+  const url = shortURL(code);
+  box.innerHTML = `<h3>受付用リンク</h3><p class="note">${esc(url)}</p><p class="note">生成中…</p>
+    <div class="row" style="justify-content:center;margin:12px 0 0"><button class="btn o" data-close>閉じる</button></div>`;
+  openModal('m-qr'); wireClose(box);
+  try {
+    const mod = await import('https://esm.sh/qrcode@1.5.4');
+    const QR = mod.default || mod;
+    const dataUrl = await QR.toDataURL(url, { width: 480, margin: 1, errorCorrectionLevel: 'M' });
+    box.innerHTML = `<h3>受付用リンク</h3><img src="${dataUrl}" alt="QR"><p class="note">${esc(url)}</p>
+      <div class="row" style="justify-content:center;margin:12px 0 0"><button class="btn o" data-close>閉じる</button></div>`;
+    wireClose(box);
+  } catch (e) { $$('.note', box)[1].textContent = 'QR の生成に失敗しました：' + (e?.message || e); }
+}
+$('#rt-noexp').addEventListener('change', e => { $('#rt-exp').disabled = e.target.checked; });
+$('#rt-issue').addEventListener('click', async () => {
+  const label = $('#rt-label').value.trim();
+  if (!label) { toast('ラベルを入れてください', 'err'); return; }
+  const noexp = $('#rt-noexp').checked;
+  const exp = noexp ? null : ($('#rt-exp').value ? new Date($('#rt-exp').value).toISOString() : null);
+  if (!noexp && !exp) { toast('期限を入れるか、無期限にしてください', 'err'); return; }
+  const code = newReceptionCode();
+  const { error } = await sb.from('reception_tokens').insert({ code, label, is_active: true, expires_at: exp });
+  if (error) { toast('発行に失敗：' + error.message, 'err'); return; }
+  $('#rt-label').value = '';
+  toast('発行しました', 'ok');
+  await loadTokens();
+});

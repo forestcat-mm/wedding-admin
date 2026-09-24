@@ -5,3 +5,8 @@ work/
 .wrangler/
 
 .DS_Store
+
+# ローカル開発用の Secret
+.dev.vars
+# Supabase CLI のリンク情報
+supabase/.temp/

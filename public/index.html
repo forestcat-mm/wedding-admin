@@ -17,6 +17,12 @@
   <input id="lg-id" type="text" placeholder="ID" autocomplete="username" autocapitalize="off" spellcheck="false">
   <input id="lg-pw" type="password" placeholder="パスワード" autocomplete="current-password">
   <button id="lg-go">ログイン</button>
+</div>
+<!-- 受付トークンの端末が管理ページを開いたとき -->
+<div class="lbox" id="noperm" hidden>
+  <p class="t">WEDDING RSVP</p><h1>管理画面</h1>
+  <p class="msg">このページを表示する権限がありません</p>
+  <a class="btn" href="/reception/" style="display:block;text-decoration:none">受付画面へ</a>
 </div></div>
 
 <header><div class="hd">
@@ -28,6 +34,7 @@
     <button data-v="budget">予算</button>
     <button data-v="seating">配席</button>
     <button data-v="circles">友人圏・シェア</button>
+    <button data-v="reception">受付トークン</button>
   </nav>
   <div class="me"><span id="me-mail"></span> ｜ <button class="btn link" id="logout">ログアウト</button></div>
 </div></header>
@@ -72,7 +79,7 @@
   <p class="sub">招待リスト（＝打診済み）と回答を1つの表で。同行者は本人の下に1行ずつ。黄色い行は同姓同名の招待者が複数いるため、手動で選んでください。</p>
   <div class="panel">
     <div class="row">
-      <input id="g-q" placeholder="氏名・メールで検索" style="width:180px">
+      <input id="g-q" placeholder="氏名・メール・受付IDで検索" style="width:190px">
       <select id="g-circle"><option value="">友人圏：すべて</option></select>
       <select id="g-reply"><option value="">回答：すべて</option><option value="none">未回答</option><option value="yes">出席</option><option value="no">欠席</option><option value="unmatched">未紐付の回答</option><option value="dupreply">重複回答のみ</option></select>
       <select id="g-match"><option value="">紐付：すべて</option><option value="unmatched">未紐付</option><option value="auto">自動紐付</option><option value="manual">手動紐付</option><option value="unlisted">招待リスト外</option></select>
@@ -102,12 +109,13 @@
     </div>
     <div class="pager" id="g-pager-top"></div>
     <div class="tblwrap"><table class="gtbl" id="g-table"><colgroup>
-      <col class="c-chk"><col class="c-name"><col class="c-att"><col class="c-contact">
+      <col class="c-chk"><col class="c-name"><col class="c-rcpt"><col class="c-att"><col class="c-contact">
       <col class="c-diet"><col class="c-link"><col class="c-join"><col class="c-memo">
       <col class="c-act"></colgroup>
       <thead><tr>
       <th><input type="checkbox" id="chkall"></th>
       <th data-col="c-name">氏名<span class="rsz"></span></th>
+      <th data-col="c-rcpt" class="ctr" title="受付ID・当日の受付状態">受付<span class="rsz"></span></th>
       <th data-col="c-att" class="ctr">出欠・区分<span class="rsz"></span></th>
       <th data-col="c-contact">連絡先<span class="rsz"></span></th>
       <th data-col="c-diet">アレルギー・食事制限<span class="rsz"></span></th>
@@ -151,6 +159,24 @@
     <div class="tblwrap"><table><thead><tr><th>タグ</th><th>人数</th><th>出席 / 欠席 / 未回答</th><th>シェアページ</th><th></th></tr></thead>
       <tbody id="c-body"></tbody></table></div>
     <p class="note" style="margin:10px 0 0">シェアページに出るのは回答済みゲストの「氏名（漢字・ローマ字）」だけで、出席・欠席はタブで分かれます。未回答者は表示されません。連絡先・アレルギー・同行者の詳細は出ません。パスワードは友人圏ごとに設定し、いつでも無効化できます。</p>
+  </div>
+</section>
+
+<!-- ===== RECEPTION TOKENS ===== -->
+<section class="view" id="v-reception">
+  <h2>受付トークン</h2>
+  <p class="sub">当日の受付端末用のリンクを発行します。リンクを開いた端末は <code>/reception/</code> だけを使えます（他の管理ページは開けません）。無効化すると、その端末は次の操作から使えなくなります。</p>
+  <div class="panel">
+    <div class="row"><b>発行</b>
+      <input id="rt-label" placeholder="ラベル（例：受付A・○○さん）" style="width:220px">
+      <label class="cntbox">期限 <input id="rt-exp" type="datetime-local" value="2026-09-26T23:59"></label>
+      <label class="chk1"><input type="checkbox" id="rt-noexp"><span>無期限</span></label>
+      <button class="btn s" id="rt-issue">発行</button>
+      <span class="sp"></span><span class="note">短縮URL：<code>https://admin.forest-mm.com/r/&lt;code&gt;</code>。開くと Cookie を発行して受付画面へ移動します</span></div>
+    <div class="tblwrap"><table id="rt-table"><thead><tr>
+      <th>ラベル</th><th>短縮URL</th><th>QR</th><th>有効</th><th>期限</th><th>最終利用</th><th>発行日</th><th></th></tr></thead>
+      <tbody id="rt-body"></tbody></table></div>
+    <p class="note" style="margin:10px 0 0">リンクは使い捨てではありません（LINE のリンクプレビューで消費されないため）。共有した相手以外に渡らないようにしてください。</p>
   </div>
 </section>
 
@@ -350,6 +376,7 @@
 <div class="modal" id="m-table"><div class="mbox" id="m-table-box"></div></div>
 <div class="modal" id="m-seatask"><div class="mbox" id="m-seatask-box"></div></div>
 <div class="modal" id="m-ev"><div class="mbox" id="m-ev-box"></div></div>
+<div class="modal" id="m-qr"><div class="mbox" id="m-qr-box" style="width:380px;text-align:center"></div></div>
 
 <!-- B4: 空席をクリックしたときの配席ポップオーバー -->
 <div class="seatpop off" id="sv-pop"></div>

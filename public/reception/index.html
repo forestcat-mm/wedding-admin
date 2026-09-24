@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<title>受付</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23F4F0EA'/%3E%3Ctext x='16' y='22' font-size='16' font-family='Georgia,serif' text-anchor='middle' fill='%232B2B2B'%3EM%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="reception.css">
+</head>
+<body>
+
+<!-- 認証できないとき（受付用リンクから開いていない） -->
+<div class="gate" id="gate" hidden>
+  <div class="gbox">
+    <p class="t">RECEPTION</p>
+    <h1>受付</h1>
+    <p id="gate-msg">受付用リンクから開いてください</p>
+  </div>
+</div>
+
+<div class="app" id="app" hidden>
+  <header class="top">
+    <div class="ttl"><span class="t">RECEPTION</span><b>受付</b></div>
+    <div class="who" id="who"></div>
+    <div class="count" id="count"><em id="c-done">0</em> / <span id="c-all">0</span><small>受付済</small></div>
+  </header>
+  <div class="tools">
+    <input id="q" type="search" inputmode="search" placeholder="受付ID（5桁）または お名前" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <div class="filters" id="filters">
+      <button data-f="all" class="on">すべて</button>
+      <button data-f="todo">未受付</button>
+      <button data-f="items">お渡し物あり</button>
+    </div>
+    <div class="netbar" id="netbar" hidden>未送信 <b id="net-n">0</b> 件（自動で再送します）</div>
+  </div>
+  <main id="list"></main>
+  <p class="foot" id="foot"></p>
+</div>
+
+<div class="modal" id="confirm" hidden>
+  <div class="mbox">
+    <p id="confirm-msg"></p>
+    <div class="mrow"><button class="btn o" id="confirm-no">やめる</button><button class="btn" id="confirm-yes">続ける</button></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script type="module" src="reception.js"></script>
+</body>
+</html>
