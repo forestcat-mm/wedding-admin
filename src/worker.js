@@ -4,12 +4,12 @@
    wrangler.toml の run_worker_first に挙げた /r/* と /api/* だけ。
      GET  /r/:code                    受付トークンの短縮URL → Cookie を発行して /reception/ へ
      GET  /api/reception/me           認証の確認（token / admin）
-     GET  /api/reception/guests       受付用のゲスト一覧（連絡先などは含めない）
+     GET  /api/reception/guests       受付用のゲスト一覧（連絡先などは含めない。v2.1: 出席する同行者 companions 付き）
      POST /api/reception/checkin      受付済 / 取り消し
      POST /api/reception/items/:id/hand  お渡し済 / 取り消し
    DB アクセスはすべてサービスロールキー（Secret: SUPABASE_SERVICE_ROLE_KEY）。
    Cookie の署名は Secret: RECEPTION_COOKIE_SECRET（HMAC-SHA256）。
-   仕様：00_spec/reception.md
+   仕様：00_spec/reception.md（v1）、03_reception-v2.md（v2）、04_reception-v2.1.md（同行者）
    ============================================================ */
 
 const COOKIE = 'rcpt';
@@ -237,12 +237,26 @@ async function guestList(env) {
     sbGet(env, 'seating_assignments?select=table_id,seat_index,person_type,person_id'),
     sbGet(env, 'seating_tables?select=id,label'),
     sbGet(env, 'replies_admin?deleted_at=is.null&superseded_by=is.null&matched_guest_id=not.is.null&attending=eq.true&select=id,matched_guest_id,side'),
-    sbGet(env, 'reply_people?idx=eq.0&deleted_at=is.null&select=id,reply_id'),
+    /* v2.1: 本人（idx=0）と同行者（idx>0）をまとめて取る。氏名は管理画面で修正済みの値。連絡先の列は無い */
+    sbGet(env, 'reply_people?deleted_at=is.null&select=id,reply_id,idx,attending,family_name,given_name,family_name_latin,given_name_latin,is_child,age,birthdate&order=idx'),
   ]);
   const tableById = new Map(tables.map(t => [t.id, t.label]));
   const seatByPerson = new Map(seats.map(a => [`${a.person_type}:${a.person_id}`, a]));
   const replyOfGuest = new Map(replies.map(r => [r.matched_guest_id, r]));
-  const person0OfReply = new Map(people.map(p => [p.reply_id, p.id]));
+  const person0OfReply = new Map(people.filter(p => p.idx === 0).map(p => [p.reply_id, p.id]));
+  /* v2.1: 出席する同行者（idx>0、attending=true）を回答ごとに idx 順で */
+  const companionsOfReply = new Map();
+  for (const p of people.filter(p => p.idx > 0 && p.attending === true).sort((a, b) => a.idx - b.idx)) {
+    if (!companionsOfReply.has(p.reply_id)) companionsOfReply.set(p.reply_id, []);
+    const a = seatByPerson.get(`reply_person:${p.id}`) || null;
+    companionsOfReply.get(p.reply_id).push({
+      family_name: p.family_name, given_name: p.given_name,
+      family_name_latin: p.family_name_latin, given_name_latin: p.given_name_latin,
+      is_child: p.is_child === true, age: ageAt(p.birthdate, p.age),
+      table: a ? (tableById.get(a.table_id) || null) : null,
+      seat: a && a.seat_index != null ? a.seat_index + 1 : null,
+    });
+  }
   const itemsOf = new Map();
   for (const it of items) {
     if (!itemsOf.has(it.guest_id)) itemsOf.set(it.guest_id, []);
@@ -265,9 +279,23 @@ async function guestList(env) {
       seat: a.seat_index != null ? a.seat_index + 1 : null,
       checked_in_at: g.checked_in_at, checked_in_by: g.checked_in_by,
       items: itemsOf.get(g.id) || [],
+      companions: companionsOfReply.get(r.id) || [],
     });
   }
   return out;
+}
+
+/* 年齢：age 列があればそれ、無ければ生年月日から挙式日（2026-09-26）時点で計算（public/app.js の ageAt と同じ） */
+const EVENT_DATE = new Date(2026, 8, 26);
+function ageAt(birthdate, age) {
+  if (age !== null && age !== undefined && age !== '') return Number(age);
+  if (!birthdate) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(birthdate);
+  if (!m) return null;
+  let a = EVENT_DATE.getFullYear() - +m[1];
+  const mm = (EVENT_DATE.getMonth() + 1) - +m[2];
+  if (mm < 0 || (mm === 0 && EVENT_DATE.getDate() - +m[3] < 0)) a--;
+  return a >= 0 ? a : null;
 }
 
 /* ---------------- 案内ページ ---------------- */

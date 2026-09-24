@@ -38,6 +38,12 @@ button,input{font-family:inherit;font-size:inherit}
 .sb{display:inline-block;font-size:10px;padding:0 6px;border-radius:2px;border:1px solid var(--line);color:var(--ink2);vertical-align:2px;white-space:nowrap}
 .sb.groom{border-color:var(--tansei);color:#3d6a9e}
 .sb.bride{border-color:var(--enji);color:var(--enji)}
+/* v2.1: 人数バッジと同行者 */
+.nb{display:inline-block;font-size:10.5px;padding:0 6px;margin-left:6px;border-radius:2px;background:var(--ink);color:#fff;vertical-align:2px;white-space:nowrap;font-weight:400}
+.comps{font-size:12px;color:var(--ink2);line-height:1.6;margin-top:2px}
+.comps .cp{white-space:nowrap}
+.comps .cp.hl{background:#EEF4FB;color:var(--ink);box-shadow:0 0 0 2px #EEF4FB;border-radius:2px}
+.comps .sl{font-style:normal;color:var(--line)}
 .ckbtn{min-width:96px;padding:12px 10px;border:1px solid var(--ink);background:#fff;color:var(--ink);font-size:14px;letter-spacing:.1em;border-radius:4px;cursor:pointer}
 .done .ckbtn{background:var(--ok);border-color:var(--ok);color:#fff}
 .chk{display:flex;flex-direction:column;align-items:center;gap:4px}
@@ -108,6 +114,7 @@ button,input{font-family:inherit;font-size:inherit}
   .gt .rid.none{font-size:12px;color:var(--ink2);font-family:var(--sans)}
   .gt .c-nm b{font-size:15px;font-weight:600}
   .gt .c-nm small{display:block;font-size:11px;color:var(--ink2);letter-spacing:.06em}
+  .gt .c-nm .comps{margin-top:4px;font-size:11.5px;white-space:normal}
   .gt .c-side{width:80px}
   .gt .c-tb{width:110px;font-family:var(--serif);font-size:15px}
   .gt .c-tb small{font-family:var(--sans);font-size:11.5px;color:var(--ink2)}

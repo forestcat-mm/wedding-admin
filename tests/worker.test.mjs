@@ -21,10 +21,20 @@ const db = {
     { id: 'r2', matched_guest_id: G_ABSENT, attending: false, side: 'groom', deleted_at: null, superseded_by: null },
     { id: 'r3', matched_guest_id: G_NOSEAT, attending: true, side: 'bride', deleted_at: null, superseded_by: null },
     { id: 'r4', matched_guest_id: G_DELETED, attending: true, side: 'bride', deleted_at: null, superseded_by: null },
+    { id: 'r1old', matched_guest_id: G1, attending: true, side: 'groom', deleted_at: null, superseded_by: 'r1' },   /* 上書きされた古い回答 */
   ],
-  people: [{ id: 'p1', reply_id: 'r1', idx: 0, deleted_at: null }, { id: 'p2', reply_id: 'r2', idx: 0, deleted_at: null }, { id: 'p3', reply_id: 'r3', idx: 0, deleted_at: null }, { id: 'p4', reply_id: 'r4', idx: 0, deleted_at: null }],
+  people: [{ id: 'p1', reply_id: 'r1', idx: 0, deleted_at: null }, { id: 'p2', reply_id: 'r2', idx: 0, deleted_at: null }, { id: 'p3', reply_id: 'r3', idx: 0, deleted_at: null }, { id: 'p4', reply_id: 'r4', idx: 0, deleted_at: null },
+    /* v2.1: 同行者。idx 順で、出席かつ未削除の行だけが companions に入る */
+    { id: 'c3', reply_id: 'r1', idx: 3, attending: true, deleted_at: null, family_name: '田中', given_name: 'さくら', family_name_latin: 'TANAKA', given_name_latin: 'SAKURA', is_child: true, age: null, birthdate: null },
+    { id: 'c1', reply_id: 'r1', idx: 1, attending: true, deleted_at: null, family_name: '田中', given_name: '花子', family_name_latin: 'TANAKA', given_name_latin: 'HANAKO', is_child: false, age: null, birthdate: null },
+    { id: 'c2', reply_id: 'r1', idx: 2, attending: true, deleted_at: null, family_name: '田中', given_name: '一郎', family_name_latin: 'TANAKA', given_name_latin: 'ICHIRO', is_child: true, age: null, birthdate: '2018-05-01' },
+    { id: 'c4', reply_id: 'r1', idx: 4, attending: false, deleted_at: null, family_name: '田中', given_name: '欠席子', is_child: false },
+    { id: 'c5', reply_id: 'r1', idx: 5, attending: true, deleted_at: '2026-09-01T00:00:00Z', family_name: '田中', given_name: '削除子', is_child: false },
+    { id: 'c6', reply_id: 'r1old', idx: 1, attending: true, deleted_at: null, family_name: '田中', given_name: '旧回答子', is_child: false },
+    { id: 'c7', reply_id: 'r2', idx: 1, attending: true, deleted_at: null, family_name: '欠席', given_name: '同行', is_child: false }],
   seats: [{ table_id: 'tA', seat_index: 2, person_type: 'reply_person', person_id: 'p1' }, { table_id: 'tA', seat_index: 3, person_type: 'reply_person', person_id: 'p2' },
-          { table_id: 'tA', seat_index: 4, person_type: 'reply_person', person_id: 'p4' }, { table_id: 'tB', seat_index: 0, person_type: 'guest', person_id: G_PROV }],
+          { table_id: 'tA', seat_index: 4, person_type: 'reply_person', person_id: 'p4' }, { table_id: 'tB', seat_index: 0, person_type: 'guest', person_id: G_PROV },
+          { table_id: 'tA', seat_index: 3, person_type: 'reply_person', person_id: 'c1' }, { table_id: 'tB', seat_index: 1, person_type: 'reply_person', person_id: 'c2' }],
   tables: [{ id: 'tA', label: 'A' }, { id: 'tB', label: 'B' }],
 };
 const log = [];
@@ -83,6 +93,15 @@ ok('v2: guest has side and table/seat', b.guests[0].side === 'groom' && b.guests
 ok('v2: absent / unseated / deleted / unanswered / provisional guests are excluded',
    !txt.includes('20002') && !txt.includes('20003') && !txt.includes('20004') && !txt.includes('20005') && !txt.includes('20006'));
 ok('guests has no email/messenger', !txt.includes('secret@example.com') && !txt.includes('SECRET') && !('email' in b.guests[0]));
+// v2.1: 同行者
+const cs = b.guests[0].companions;
+ok('v2.1: companions in idx order, attending & not deleted only', Array.isArray(cs) && cs.map(c => c.given_name).join(',') === '花子,一郎,さくら');
+ok('v2.1: companion fields (name, is_child, age from birthdate, table/seat)',
+   cs[0].family_name === '田中' && cs[0].family_name_latin === 'TANAKA' && cs[0].is_child === false && cs[0].age === null && cs[0].table === 'A' && cs[0].seat === 4
+   && cs[1].is_child === true && cs[1].age === 8 && cs[1].table === 'B' && cs[1].seat === 2
+   && cs[2].is_child === true && cs[2].age === null && cs[2].table === null && cs[2].seat === null);
+ok('v2.1: absent / deleted / superseded-reply companions are excluded', !txt.includes('欠席子') && !txt.includes('削除子') && !txt.includes('旧回答子') && !txt.includes('同行'));
+ok('v2.1: companions carry no contact fields', cs.every(c => !('email' in c) && !('messenger_id' in c) && !('allergy' in c) && !('reply_id' in c) && !('id' in c)));
 // 4. checkin / undo
 r = await req('/api/reception/checkin', { method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ guest_id: db.guests[0].id }) }); b = await r.json();
 ok('checkin sets by=label', b.ok && b.guest.checked_in_by === '受付A' && !!db.guests[0].checked_in_at);

@@ -1,7 +1,8 @@
 /* 受付画面（/reception/）
    データはすべて /api/reception/* から取る（この HTML にはゲスト情報を含めない）。
    認証：Supabase のセッションがあれば Bearer、なければ受付トークンの Cookie。
-   仕様：00_spec/reception.md（v1）、00_spec/03_reception-v2.md（v2：対象の限定・サイド切替・PC レイアウト） */
+   仕様：00_spec/reception.md（v1）、00_spec/03_reception-v2.md（v2：対象の限定・サイド切替・PC レイアウト）、
+         00_spec/04_reception-v2.1.md（v2.1：同行者の表示） */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const SUPA_URL = 'https://cvnqnvnppvfhwmrehagt.supabase.co';
 const SUPA_KEY = 'sb_publishable_ZYwTP155dx57wEopKpezNA_LR1IOjID';
@@ -78,11 +79,13 @@ const isPC = () => window.matchMedia('(min-width: 1024px)').matches;
 function paintSide() {
   $$('#side button').forEach(b => b.classList.toggle('on', b.dataset.s === R.side));
 }
+/* v2.1: 同行者の名前（漢字・ローマ字）でも一致させる。一致した同行者は表示でハイライト */
+const compMatch = (c, q) => !!q && !/^\d{5}$/.test(q) && norm(fullName(c) + ' ' + latin(c)).includes(norm(q));
 function matchesQuery(g) {
   const q = R.q.trim();
   if (!q) return true;
   if (/^\d{5}$/.test(q)) return g.reception_id === q;            /* 5桁＝受付IDの完全一致 */
-  return norm(fullName(g) + ' ' + latin(g)).includes(norm(q));
+  return norm(fullName(g) + ' ' + latin(g)).includes(norm(q)) || (g.companions || []).some(c => compMatch(c, q));
 }
 function matchesFilter(g) {
   if (R.filter === 'todo' && g.checked_in_at) return false;
@@ -123,6 +126,21 @@ function render() {
   if (R.hit) document.querySelector(`[data-id="${R.hit.id}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
 }
 const sideBadge = g => g.side ? `<span class="sb ${g.side}">${SIDE_LABEL[g.side]}</span>` : '';
+/* v2.1: 人数バッジ「計n名」（本人＋同行者）と同行者の一覧。同行者がいなければ空文字（表示部分ごと出さない） */
+const comps = g => g.companions || [];
+const countBadge = g => comps(g).length ? `<span class="nb">計${comps(g).length + 1}名</span>` : '';
+function compLabel(g, c) {
+  let t = fullName(c) || latin(c) || '（名前なし）';
+  if (c.is_child) t += c.age != null ? `（子・${c.age}歳）` : '（子・年齢未記入）';
+  if (c.table && c.table !== g.table) t += `（${c.table}卓）`;
+  return t;
+}
+function compsHTML(g) {
+  if (!comps(g).length) return '';
+  const q = R.q.trim();
+  return `<div class="comps">同行：${comps(g).map(c =>
+    `<span class="cp${compMatch(c, q) ? ' hl' : ''}">${esc(compLabel(g, c))}</span>`).join('<i class="sl"> ／ </i>')}</div>`;
+}
 const itemsHTML = g => g.items.map(it => `
     <div class="item${it.handed_at ? ' handed' : ''}">
       <div class="lb"><b>${esc(it.label)}</b>${it.note ? `<small>${esc(it.note)}</small>` : ''}
@@ -140,7 +158,8 @@ function card(g) {
   return `<article class="card ${cls(g)}" data-id="${esc(g.id)}">
     <div class="info">
       <div class="rid${g.reception_id ? '' : ' none'}">${g.reception_id ? esc(g.reception_id) : '受付ID未発番'}</div>
-      <div class="nm">${esc(fullName(g)) || '（名前なし）'} ${sideBadge(g)}<small>${esc(latin(g))}</small></div>
+      <div class="nm">${esc(fullName(g)) || '（名前なし）'} ${sideBadge(g)}${countBadge(g)}<small>${esc(latin(g))}</small></div>
+      ${compsHTML(g)}
       <div class="tb">${g.table ? `卓 <b>${esc(g.table)}</b>${g.seat ? `　席 ${g.seat}` : ''}` : '卓：未定'}</div>
     </div>
     <div class="chk">${checkHTML(g)}</div>
@@ -159,7 +178,7 @@ function rowHTML(g) {
   const items = itemsHTML(g);
   return `<tr class="${cls(g)}" data-id="${esc(g.id)}">
     <td class="c-rid"><span class="rid${g.reception_id ? '' : ' none'}">${g.reception_id ? esc(g.reception_id) : '未発番'}</span></td>
-    <td class="c-nm"><b>${esc(fullName(g)) || '（名前なし）'}</b><small>${esc(latin(g))}</small></td>
+    <td class="c-nm"><b>${esc(fullName(g)) || '（名前なし）'}</b>${countBadge(g)}<small>${esc(latin(g))}</small>${compsHTML(g)}</td>
     <td class="c-side">${sideBadge(g)}</td>
     <td class="c-tb">${g.table ? `<b>${esc(g.table)}</b>${g.seat ? ` <small>席 ${g.seat}</small>` : ''}` : '<small>未定</small>'}</td>
     <td class="c-items">${items ? `<div class="items">${items}</div>` : '<small class="none">—</small>'}</td>
