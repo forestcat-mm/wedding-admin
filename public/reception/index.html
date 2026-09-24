@@ -21,20 +21,24 @@
 </div>
 
 <div class="app" id="app" hidden>
-  <header class="top">
-    <div class="ttl"><span class="t">RECEPTION</span><b>受付</b></div>
-    <div class="who" id="who"></div>
-    <div class="count" id="count"><em id="c-done">0</em> / <span id="c-all">0</span><small>受付済</small></div>
-  </header>
-  <div class="tools">
-    <input id="q" type="search" inputmode="search" placeholder="受付ID（5桁）または お名前" autocomplete="off" autocapitalize="off" spellcheck="false">
-    <div class="filters" id="filters">
-      <button data-f="all" class="on">すべて</button>
-      <button data-f="todo">未受付</button>
-      <button data-f="items">お渡し物あり</button>
+  <header class="top" id="top">
+    <div class="row1">
+      <div class="ttl"><span class="t">RECEPTION</span><b>受付</b></div>
+      <div class="who"><span id="who"></span>
+        <div class="seg" id="side" role="group" aria-label="サイド">
+          <button data-s="groom">新郎側</button><button data-s="bride">新婦側</button><button data-s="all">すべて</button></div></div>
+      <div class="count" id="count"><em id="c-done">0</em> / <span id="c-all">0</span><small>受付済</small></div>
+    </div>
+    <div class="row2">
+      <input id="q" type="search" inputmode="search" placeholder="受付ID（5桁）または お名前" autocomplete="off" autocapitalize="off" spellcheck="false" autofocus>
+      <div class="filters" id="filters">
+        <button data-f="all" class="on">すべて</button>
+        <button data-f="todo">未受付</button>
+        <button data-f="items">お渡し物あり</button>
+      </div>
     </div>
     <div class="netbar" id="netbar" hidden>未送信 <b id="net-n">0</b> 件（自動で再送します）</div>
-  </div>
+  </header>
   <main id="list"></main>
   <p class="foot" id="foot"></p>
 </div>

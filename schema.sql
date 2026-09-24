@@ -539,7 +539,9 @@ CREATE TABLE public.reception_tokens (
     is_active boolean DEFAULT true NOT NULL,
     expires_at timestamp with time zone,
     last_used_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    default_side text DEFAULT 'all'::text NOT NULL,
+    CONSTRAINT reception_tokens_default_side_check CHECK ((default_side = ANY (ARRAY['groom'::text, 'bride'::text, 'all'::text])))
 );
 
 -- sync_rsvp_row：rsvp 1行を replies_admin / reply_people に展開し、招待者と突き合わせる（トリガーと初回取り込みで共用）（引数に rsvp 型を使うのでテーブルの後に定義）

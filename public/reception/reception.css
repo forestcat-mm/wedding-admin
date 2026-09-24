@@ -12,38 +12,38 @@ button,input{font-family:inherit;font-size:inherit}
 .gbox h1{font-family:var(--serif);font-weight:500;font-size:20px;margin:4px 0 16px;letter-spacing:.1em}
 .gbox p{margin:0;color:var(--ink2)}
 
+/* ---- ヘッダー（上部固定） ---- */
 .app{max-width:720px;margin:0 auto;padding:0 12px 80px}
-.top{position:sticky;top:0;z-index:5;background:var(--bg);display:flex;align-items:center;gap:12px;padding:12px 0 8px;border-bottom:1px solid var(--line)}
-.top .ttl{display:flex;flex-direction:column;line-height:1.1}
-.top .ttl b{font-family:var(--serif);font-weight:500;font-size:18px;letter-spacing:.1em}
-.top .who{flex:1;font-size:11.5px;color:var(--ink2);text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.top .count{display:flex;align-items:baseline;gap:4px;white-space:nowrap}
-.top .count em{font-family:var(--display);font-style:normal;font-size:26px;line-height:1;color:var(--ok)}
-.top .count small{font-size:11px;color:var(--ink2);margin-left:4px}
-
-.tools{position:sticky;top:56px;z-index:4;background:var(--bg);padding:10px 0 8px}
-.tools input{width:100%;border:1px solid var(--ink);background:#fff;padding:14px 14px;font-size:20px;border-radius:4px}
+.top{position:sticky;top:0;z-index:5;background:var(--bg);padding:10px 0 8px;border-bottom:1px solid var(--line)}
+.row1{display:flex;align-items:center;gap:10px}
+.ttl{display:flex;flex-direction:column;line-height:1.1;flex:none}
+.ttl b{font-family:var(--serif);font-weight:500;font-size:18px;letter-spacing:.1em}
+.who{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:11.5px;color:var(--ink2)}
+.who>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:3px;overflow:hidden;background:#fff}
+.seg button{border:0;background:none;padding:5px 9px;font-size:12px;color:var(--ink2);cursor:pointer;border-right:1px solid var(--line)}
+.seg button:last-child{border-right:0}
+.seg button.on{background:var(--ink);color:#fff}
+.count{display:flex;align-items:baseline;gap:4px;white-space:nowrap;flex:none}
+.count em{font-family:var(--display);font-style:normal;font-size:26px;line-height:1;color:var(--ok)}
+.count small{font-size:11px;color:var(--ink2);margin-left:4px}
+.row2{margin-top:8px}
+.row2 input{width:100%;border:1px solid var(--ink);background:#fff;padding:14px 14px;font-size:20px;border-radius:4px}
 .filters{display:flex;gap:6px;margin-top:8px}
 .filters button{flex:1;background:#fff;border:1px solid var(--line);padding:9px 4px;font-size:13px;color:var(--ink2);border-radius:3px;cursor:pointer}
 .filters button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
 .netbar{margin-top:8px;background:#FBF3E3;border:1px solid #eadcbb;color:var(--warn);padding:6px 10px;font-size:12.5px;border-radius:3px}
 
-.card{background:#fff;border:1px solid var(--line);border-radius:4px;padding:12px 14px;margin:10px 0;display:grid;grid-template-columns:1fr auto;gap:8px 12px;align-items:start}
-.card.done{border-color:#c9dccf;background:#F7FAF7}
-.card.pending{outline:2px dashed var(--warn);outline-offset:-2px}
-.card .rid{font-family:var(--display);font-size:30px;line-height:1;letter-spacing:.06em}
-.card .rid.none{font-size:14px;color:var(--ink2);font-family:var(--sans)}
-.card .nm{margin-top:4px;font-size:17px;font-weight:600;line-height:1.3}
-.card .nm small{display:block;font-weight:400;font-size:11.5px;color:var(--ink2);letter-spacing:.06em}
-.card .tb{font-size:12.5px;color:var(--ink2);margin-top:2px}
-.card .tb b{color:var(--ink);font-family:var(--serif);font-size:14px}
-.card .info{grid-column:1}
-.card .chk{grid-column:2;grid-row:1/3;align-self:stretch;display:flex;flex-direction:column;justify-content:center;gap:4px}
-.card .chk button{min-width:96px;padding:12px 10px;border:1px solid var(--ink);background:#fff;color:var(--ink);font-size:14px;letter-spacing:.1em;border-radius:4px;cursor:pointer}
-.card.done .chk button{background:var(--ok);border-color:var(--ok);color:#fff}
-.card .chk small{font-size:11px;color:var(--ok);text-align:center;line-height:1.3}
-.card .chk small.by{color:var(--ink2)}
-.card .items{grid-column:1;grid-row:2;display:flex;flex-direction:column;gap:6px;margin-top:4px}
+/* ---- 共通パーツ ---- */
+.sb{display:inline-block;font-size:10px;padding:0 6px;border-radius:2px;border:1px solid var(--line);color:var(--ink2);vertical-align:2px;white-space:nowrap}
+.sb.groom{border-color:var(--tansei);color:#3d6a9e}
+.sb.bride{border-color:var(--enji);color:var(--enji)}
+.ckbtn{min-width:96px;padding:12px 10px;border:1px solid var(--ink);background:#fff;color:var(--ink);font-size:14px;letter-spacing:.1em;border-radius:4px;cursor:pointer}
+.done .ckbtn{background:var(--ok);border-color:var(--ok);color:#fff}
+.chk{display:flex;flex-direction:column;align-items:center;gap:4px}
+.chk small{font-size:11px;color:var(--ok);text-align:center;line-height:1.3}
+.chk small.by{color:var(--ink2)}
+.items{display:flex;flex-direction:column;gap:6px}
 .item{display:flex;align-items:center;gap:10px;border:1px solid #eadcbb;background:#FBF3E3;padding:8px 10px;border-radius:3px}
 .item.handed{background:#F7FAF7;border-color:#c9dccf}
 .item .lb{flex:1;min-width:0}
@@ -52,9 +52,74 @@ button,input{font-family:inherit;font-size:inherit}
 .item .lb .at{font-size:11px;color:var(--ok)}
 .item button{border:1px solid var(--warn);background:#fff;color:var(--warn);padding:8px 10px;font-size:13px;border-radius:3px;white-space:nowrap;cursor:pointer}
 .item.handed button{border-color:var(--ok);background:var(--ok);color:#fff}
-.card .pend{grid-column:1/3;font-size:11.5px;color:var(--warn)}
+.pend{font-size:11.5px;color:var(--warn)}
+.other{opacity:.62}
+.hit{box-shadow:0 0 0 3px var(--tansei)!important}
 .empty{text-align:center;color:var(--ink2);padding:40px 0}
+.othersep{margin:16px 0 4px;font-size:12px;color:var(--ink2);border-top:1px dashed var(--line);padding-top:10px}
 .foot{text-align:center;font-size:11px;color:var(--ink2);margin:20px 0}
+
+/* ---- カード（スマホ） ---- */
+.card{background:#fff;border:1px solid var(--line);border-radius:4px;padding:12px 14px;margin:10px 0;display:grid;grid-template-columns:1fr auto;gap:8px 12px;align-items:start}
+.card.done{border-color:#c9dccf;background:#F7FAF7}
+.card.pending{outline:2px dashed var(--warn);outline-offset:-2px}
+.card.unhanded{border-left:4px solid var(--warn)}
+.card .rid{font-family:var(--display);font-size:30px;line-height:1;letter-spacing:.06em}
+.card .rid.none{font-size:14px;color:var(--ink2);font-family:var(--sans)}
+.card .nm{margin-top:4px;font-size:17px;font-weight:600;line-height:1.3}
+.card .nm small{display:block;font-weight:400;font-size:11.5px;color:var(--ink2);letter-spacing:.06em}
+.card .tb{font-size:12.5px;color:var(--ink2);margin-top:2px}
+.card .tb b{color:var(--ink);font-family:var(--serif);font-size:14px}
+.card .info{grid-column:1}
+.card .chk{grid-column:2;grid-row:1/3;align-self:stretch;justify-content:center}
+.card .items{grid-column:1;grid-row:2;margin-top:4px}
+.card .pend{grid-column:1/3}
+
+/* ---- タブレット（768〜1023px）：カード 2 列 ---- */
+@media (min-width:768px) and (max-width:1023px){
+  .app{max-width:1000px}
+  #list{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+  .card{margin:0}
+  .othersep{grid-column:1/3}
+  .card .rid{font-size:34px}
+}
+
+/* ---- PC（1024px 以上）：表 ---- */
+@media (min-width:1024px){
+  .app{max-width:1400px;padding:0 20px 80px}
+  .row1{gap:20px}
+  .who{flex-direction:row;justify-content:center;gap:14px;font-size:12.5px}
+  .row2{display:flex;gap:12px;align-items:center}
+  .row2 input{flex:1;font-size:18px;padding:11px 14px}
+  .filters{margin:0;flex:none}
+  .filters button{flex:none;padding:9px 16px}
+  #list.pc{margin-top:12px}
+  table.gt{width:100%;border-collapse:separate;border-spacing:0;background:#fff;border:1px solid var(--line);font-size:14px;min-width:960px}
+  .gt th{position:sticky;top:var(--topH,116px);z-index:3;background:#F7F4EF;text-align:left;font-size:11.5px;color:var(--ink2);letter-spacing:.06em;padding:8px 12px;border-bottom:1px solid var(--line)}
+  .gt td{padding:12px 12px;border-bottom:1px solid #EFE9E1;vertical-align:middle}
+  .gt tr.done td{background:#F7FAF7}
+  .gt tr.unhanded td:first-child{box-shadow:inset 4px 0 0 var(--warn)}
+  .gt tr.pending td{background:#FFFBF0}
+  .gt tr.hit td{background:#EEF4FB}
+  .gt tr.other td{opacity:.62}
+  .gt .others tr.sep td{background:#F7F4EF;color:var(--ink2);font-size:12px;padding:6px 12px}
+  .gt .c-rid{width:110px}
+  .gt .rid{font-family:var(--display);font-size:26px;letter-spacing:.06em;line-height:1}
+  .gt .rid.none{font-size:12px;color:var(--ink2);font-family:var(--sans)}
+  .gt .c-nm b{font-size:15px;font-weight:600}
+  .gt .c-nm small{display:block;font-size:11px;color:var(--ink2);letter-spacing:.06em}
+  .gt .c-side{width:80px}
+  .gt .c-tb{width:110px;font-family:var(--serif);font-size:15px}
+  .gt .c-tb small{font-family:var(--sans);font-size:11.5px;color:var(--ink2)}
+  .gt .c-items{min-width:280px}
+  .gt .c-items .items{gap:4px}
+  .gt .c-items .item{padding:5px 8px}
+  .gt .c-items .item button{padding:6px 9px;font-size:12px}
+  .gt .c-items .none{color:var(--ink2)}
+  .gt .c-chk{width:150px}
+  .gt .ckbtn{padding:10px 10px}
+  .gt .pend{margin-top:4px;text-align:center}
+}
 
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:30;padding:20px}
 .mbox{background:#fff;padding:22px;width:360px;max-width:100%;border-radius:4px}
@@ -65,4 +130,3 @@ button,input{font-family:inherit;font-size:inherit}
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:9px 16px;font-size:13px;border-radius:3px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:40;max-width:90vw}
 .toast.on{opacity:1}
 .toast.err{background:var(--enji)}
-@media (min-width:600px){.card .rid{font-size:34px}}

@@ -347,6 +347,7 @@ async function loadAll() {
   loadColWidths(); wireColResize();
   renderDash(); renderGuests(); renderCircles(); renderPhotos(); renderBudget();
   await loadSeating(); renderSeating();
+  renderDash();                    /* 受付カードの母数（配席済み）は配席の読み込み後に確定する */
 }
 /* A1: 個別ギフト欄のサジェスト元。予算タブの「個別手配分」の品目名を使う。
    このテーブルが未作成でも一覧が壊れないよう、失敗は握りつぶす */
@@ -485,6 +486,16 @@ function fillCircleSelects() {
 boot();
 
 /* ============================== 集計 ============================== */
+/* 受付の対象：出席予定（招待者に紐付いた有効な回答の attending が true）かつ配席済み（本人または仮配席の割当がある） */
+function receptionPool(liveGuests) {
+  if (typeof T === 'undefined' || !T.loaded) return liveGuests.filter(g => S.replyOfGuest.get(g.id)?.attending === true);
+  return liveGuests.filter(g => {
+    const r = S.replyOfGuest.get(g.id);
+    if (!r || r.attending !== true) return false;
+    const me = person0(r.id);
+    return (me && T.asgByPerson.has(pkey('reply_person', me.id))) || T.asgByPerson.has(pkey('guest', g.id));
+  });
+}
 function stats() {
   const liveGuests = S.guests.filter(g => !g.deleted_at);
   const invitedGuests = liveGuests.filter(g => !g.auto_created);
@@ -530,8 +541,11 @@ function stats() {
             none: liveGuests.filter(g => !g.side).length },
     lineJoined: liveGuests.filter(g => g.line_joined).length,
     wechatJoined: liveGuests.filter(g => g.wechat_joined).length,
-    checkedIn: liveGuests.filter(g => g.checked_in_at).length,
-    unhanded: S.items.filter(it => !it.handed_at && S.byGuest.get(it.guest_id) && !S.byGuest.get(it.guest_id).deleted_at).length,
+    /* 受付の母数（v2）：出席予定（有効な回答が出席）かつ配席済みの招待者。受付画面の API と同じ条件 */
+    rcptPool: receptionPool(liveGuests).length,
+    checkedIn: receptionPool(liveGuests).filter(g => g.checked_in_at).length,
+    unhanded: (() => { const ids = new Set(receptionPool(liveGuests).map(g => g.id));
+      return S.items.filter(it => !it.handed_at && ids.has(it.guest_id)).length; })(),
   };
 }
 function circleStats() {
@@ -589,9 +603,10 @@ function renderDash() {
       <div class="v">${rate(st.wechatJoined, st.invited)}<small>%</small></div>
       <div class="note">${st.wechatJoined} / ${st.invited} 名</div>
       <div class="bar"><i style="width:${rate(st.wechatJoined, st.invited)}%"></i></div></div>
-    <div class="card${st.checkedIn ? '' : ''}"><div class="k">当日の受付</div>
-      <div class="v">${st.checkedIn}<small>/ ${st.invited} 名 受付済</small></div>
-      <div class="bar"><i style="width:${rate(st.checkedIn, st.invited)}%"></i></div></div>
+    <div class="card"><div class="k">当日の受付</div>
+      <div class="v">${st.checkedIn}<small>/ ${st.rcptPool} 名 受付済</small></div>
+      <div class="note">出席予定で配席済みの招待者が母数</div>
+      <div class="bar"><i style="width:${rate(st.checkedIn, st.rcptPool)}%"></i></div></div>
     <div class="card${st.unhanded ? ' warn' : ''}"><div class="k">未渡しのお渡し物</div>
       <div class="v">${st.unhanded}<small>件</small></div>
       <div class="note">お車代・お礼など（ゲスト編集で登録）</div></div>`;
@@ -5933,11 +5948,18 @@ function renderTokens() {
     <td class="url"><code>${esc(shortURL(t.code))}</code> <button class="btn s o" data-copy="${esc(t.code)}">コピー</button></td>
     <td><button class="btn s o" data-qr="${esc(t.code)}">QR</button></td>
     <td><label class="chk1"><input type="checkbox" data-toggle="${esc(t.id)}"${t.is_active ? ' checked' : ''}><span>${t.is_active ? (tokenAlive(t) ? '有効' : '期限切れ') : '無効'}</span></label></td>
+    <td><select data-side="${esc(t.id)}">${[['all', 'すべて'], ['groom', '新郎側'], ['bride', '新婦側']].map(([v, l]) =>
+      `<option value="${v}"${(t.default_side || 'all') === v ? ' selected' : ''}>${l}</option>`).join('')}</select></td>
     <td>${t.expires_at ? esc(fmtDT(t.expires_at)) : '無期限'}</td>
     <td>${t.last_used_at ? esc(fmtDT(t.last_used_at)) : '—'}</td>
     <td>${esc(fmtDT(t.created_at))}</td>
     <td class="act"><button class="btn s enji" data-del="${esc(t.id)}">削除</button></td></tr>`).join('')
-    || '<tr><td colspan="8" class="note">まだ発行していません</td></tr>';
+    || '<tr><td colspan="9" class="note">まだ発行していません</td></tr>';
+  $$('[data-side]', body).forEach(sel => sel.addEventListener('change', async () => {
+    const { error } = await sb.from('reception_tokens').update({ default_side: sel.value }).eq('id', sel.dataset.side);
+    if (error) { toast('変更に失敗：' + error.message, 'err'); return; }
+    toast('既定サイドを変更しました', 'ok'); await loadTokens();
+  }));
   $$('[data-copy]', body).forEach(b => b.addEventListener('click', async () => {
     try { await navigator.clipboard.writeText(shortURL(b.dataset.copy)); toast('URLをコピーしました', 'ok'); }
     catch { toast('コピーできませんでした。URLを長押しして選択してください', 'err'); }
@@ -5980,7 +6002,8 @@ $('#rt-issue').addEventListener('click', async () => {
   const exp = noexp ? null : ($('#rt-exp').value ? new Date($('#rt-exp').value).toISOString() : null);
   if (!noexp && !exp) { toast('期限を入れるか、無期限にしてください', 'err'); return; }
   const code = newReceptionCode();
-  const { error } = await sb.from('reception_tokens').insert({ code, label, is_active: true, expires_at: exp });
+  const default_side = $('#rt-side').value || 'all';
+  const { error } = await sb.from('reception_tokens').insert({ code, label, is_active: true, expires_at: exp, default_side });
   if (error) { toast('発行に失敗：' + error.message, 'err'); return; }
   $('#rt-label').value = '';
   toast('発行しました', 'ok');

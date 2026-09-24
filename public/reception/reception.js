@@ -1,17 +1,22 @@
 /* 受付画面（/reception/）
    データはすべて /api/reception/* から取る（この HTML にはゲスト情報を含めない）。
-   認証：Supabase のセッションがあれば Bearer、なければ受付トークンの Cookie。仕様：00_spec/reception.md */
+   認証：Supabase のセッションがあれば Bearer、なければ受付トークンの Cookie。
+   仕様：00_spec/reception.md（v1）、00_spec/03_reception-v2.md（v2：対象の限定・サイド切替・PC レイアウト） */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const SUPA_URL = 'https://cvnqnvnppvfhwmrehagt.supabase.co';
 const SUPA_KEY = 'sb_publishable_ZYwTP155dx57wEopKpezNA_LR1IOjID';
 const sb = createClient(SUPA_URL, SUPA_KEY);
 
 const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 const norm = s => String(s ?? '').replace(/[\s　]/g, '').toLowerCase();
 const REFRESH_MS = 10000, RETRY_MS = 5000;
+const SIDES = ['groom', 'bride', 'all'];
+const SIDE_LABEL = { groom: '新郎側', bride: '新婦側' };
+const SIDE_KEY = 'rcpt_side';
 
-const R = { guests: [], q: '', filter: 'all', me: null, queue: [], pendingIds: new Set(), timer: null, retry: null };
+const R = { guests: [], q: '', filter: 'all', side: 'all', me: null, queue: [], pendingIds: new Set(), timer: null, retry: null, hit: null };
 
 /* ---------------- API ---------------- */
 async function authHeaders() {
@@ -41,9 +46,15 @@ async function boot() {
   }
   $('#app').hidden = false;
   $('#who').textContent = `操作者：${R.me.label}${R.me.via === 'admin' ? '（管理者）' : ''}`;
+  /* v2: サイドの初期値。端末で切り替えた値 → トークンの既定 → all */
+  let saved = null;
+  try { saved = localStorage.getItem(SIDE_KEY); } catch {}
+  R.side = SIDES.includes(saved) ? saved : (SIDES.includes(R.me.default_side) ? R.me.default_side : 'all');
+  paintSide();
   await load();
   R.timer = setInterval(load, REFRESH_MS);           /* 複数端末の状態を同期 */
   document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
+  $('#q').focus();
 }
 async function load() {
   try {
@@ -61,58 +72,111 @@ async function load() {
 const fmtT = iso => iso ? new Date(iso).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) : '';
 const fullName = g => `${g.family_name ?? ''} ${g.given_name ?? ''}`.trim();
 const latin = g => `${g.family_name_latin ?? ''} ${g.given_name_latin ?? ''}`.trim().toUpperCase();
+const inSide = g => R.side === 'all' || g.side === R.side;
+const isPC = () => window.matchMedia('(min-width: 1024px)').matches;
 
-function matches(g) {
+function paintSide() {
+  $$('#side button').forEach(b => b.classList.toggle('on', b.dataset.s === R.side));
+}
+function matchesQuery(g) {
   const q = R.q.trim();
-  if (q) {
-    if (/^\d{5}$/.test(q)) { if (g.reception_id !== q) return false; }        /* 5桁＝受付IDの完全一致 */
-    else if (!norm(fullName(g) + ' ' + latin(g)).includes(norm(q))) return false;
-  }
+  if (!q) return true;
+  if (/^\d{5}$/.test(q)) return g.reception_id === q;            /* 5桁＝受付IDの完全一致 */
+  return norm(fullName(g) + ' ' + latin(g)).includes(norm(q));
+}
+function matchesFilter(g) {
   if (R.filter === 'todo' && g.checked_in_at) return false;
   if (R.filter === 'items' && !g.items.length) return false;
   return true;
 }
+const order = (a, b) => (a.checked_in_at ? 1 : 0) - (b.checked_in_at ? 1 : 0)
+  || (a.reception_id || '99999').localeCompare(b.reception_id || '99999');
+
 function render() {
-  const all = R.guests, done = all.filter(g => g.checked_in_at).length;
-  $('#c-done').textContent = done; $('#c-all').textContent = all.length;
-  const list = all.filter(matches);
-  const unhandedFirst = (a, b) => (a.checked_in_at ? 1 : 0) - (b.checked_in_at ? 1 : 0)
-    || (a.reception_id || '99999').localeCompare(b.reception_id || '99999');
-  $('#list').innerHTML = list.length ? list.sort(unhandedFirst).map(card).join('')
-    : '<p class="empty">該当するゲストがいません</p>';
-  $('#foot').textContent = `${list.length} 名を表示 ／ 10秒ごとに自動更新`;
+  /* v2: 母数は選択中のサイド */
+  const pool = R.guests.filter(inSide);
+  const done = pool.filter(g => g.checked_in_at).length;
+  $('#c-done').textContent = done; $('#c-all').textContent = pool.length;
+  const main = pool.filter(g => matchesQuery(g) && matchesFilter(g)).sort(order);
+  /* v2: 検索中は、もう一方のサイドの該当者も下に薄く出す（別サイドのゲストが来ても受付できるように） */
+  const q = R.q.trim();
+  const other = q && R.side !== 'all'
+    ? R.guests.filter(g => !inSide(g) && matchesQuery(g) && matchesFilter(g)).sort(order) : [];
+  /* 5桁で1件だけ一致したらその行を強調する（Enter で受付） */
+  R.hit = /^\d{5}$/.test(q) && main.length + other.length === 1 ? (main[0] || other[0]) : null;
+
+  const pc = isPC();
+  const rowsHTML = list => pc ? list.map(rowHTML).join('') : list.map(card).join('');
+  let html = '';
+  if (!main.length && !other.length) html = '<p class="empty">該当するゲストがいません</p>';
+  else {
+    html = pc ? tableHTML(rowsHTML(main), other.length ? rowsHTML(other) : '') : rowsHTML(main);
+    if (!pc && other.length) html += `<p class="othersep">${SIDE_LABEL[R.side === 'groom' ? 'bride' : 'groom']}の該当者</p>` + rowsHTML(other);
+  }
+  $('#list').innerHTML = html;
+  $('#list').classList.toggle('pc', pc);
+  /* PC：表の見出しはヘッダーの直下に固定する（ヘッダーの高さは内容で変わる） */
+  document.documentElement.style.setProperty('--topH', $('#top').offsetHeight + 'px');
+  $('#foot').textContent = `${main.length} 名を表示${other.length ? `（別サイド ${other.length} 名）` : ''} ／ 10秒ごとに自動更新`;
   const n = R.queue.length;
   $('#netbar').hidden = !n; $('#net-n').textContent = n;
+  if (R.hit) document.querySelector(`[data-id="${R.hit.id}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
 }
-function card(g) {
-  const pending = R.pendingIds.has(g.id);
-  const items = g.items.map(it => `
+const sideBadge = g => g.side ? `<span class="sb ${g.side}">${SIDE_LABEL[g.side]}</span>` : '';
+const itemsHTML = g => g.items.map(it => `
     <div class="item${it.handed_at ? ' handed' : ''}">
       <div class="lb"><b>${esc(it.label)}</b>${it.note ? `<small>${esc(it.note)}</small>` : ''}
         ${it.handed_at ? `<span class="at">お渡し済 ${fmtT(it.handed_at)}${it.handed_by ? '・' + esc(it.handed_by) : ''}</span>` : ''}</div>
       <button data-hand="${esc(it.id)}" data-g="${esc(g.id)}" data-undo="${it.handed_at ? '1' : ''}">${it.handed_at ? 'お渡し済' : '未渡し → お渡し済'}</button>
     </div>`).join('');
-  return `<article class="card${g.checked_in_at ? ' done' : ''}${pending ? ' pending' : ''}" data-id="${esc(g.id)}">
+const checkHTML = g => `<button class="ckbtn" data-checkin="${esc(g.id)}" data-undo="${g.checked_in_at ? '1' : ''}">${g.checked_in_at ? '受付済' : '受付'}</button>
+      ${g.checked_in_at ? `<small>${fmtT(g.checked_in_at)}</small><small class="by">${esc(g.checked_in_by || '')}</small>` : ''}`;
+const cls = g => [g.checked_in_at ? 'done' : '', R.pendingIds.has(g.id) ? 'pending' : '', inSide(g) ? '' : 'other',
+  g.items.some(i => !i.handed_at) ? 'unhanded' : '', R.hit?.id === g.id ? 'hit' : ''].filter(Boolean).join(' ');
+
+/* スマホ・タブレット：カード */
+function card(g) {
+  const items = itemsHTML(g);
+  return `<article class="card ${cls(g)}" data-id="${esc(g.id)}">
     <div class="info">
       <div class="rid${g.reception_id ? '' : ' none'}">${g.reception_id ? esc(g.reception_id) : '受付ID未発番'}</div>
-      <div class="nm">${esc(fullName(g)) || '（名前なし）'}<small>${esc(latin(g))}</small></div>
+      <div class="nm">${esc(fullName(g)) || '（名前なし）'} ${sideBadge(g)}<small>${esc(latin(g))}</small></div>
       <div class="tb">${g.table ? `卓 <b>${esc(g.table)}</b>${g.seat ? `　席 ${g.seat}` : ''}` : '卓：未定'}</div>
     </div>
-    <div class="chk">
-      <button data-checkin="${esc(g.id)}" data-undo="${g.checked_in_at ? '1' : ''}">${g.checked_in_at ? '受付済' : '受付'}</button>
-      ${g.checked_in_at ? `<small>${fmtT(g.checked_in_at)}</small><small class="by">${esc(g.checked_in_by || '')}</small>` : ''}
-    </div>
+    <div class="chk">${checkHTML(g)}</div>
     ${items ? `<div class="items">${items}</div>` : ''}
-    ${pending ? '<div class="pend">未送信（自動で再送します）</div>' : ''}
+    ${R.pendingIds.has(g.id) ? '<div class="pend">未送信（自動で再送します）</div>' : ''}
   </article>`;
+}
+/* PC：表 */
+function tableHTML(mainRows, otherRows) {
+  return `<table class="gt"><thead><tr><th class="c-rid">受付ID</th><th>氏名</th><th class="c-side">サイド</th><th class="c-tb">卓・席</th><th>お渡し物</th><th class="c-chk">受付状態</th></tr></thead>
+    <tbody>${mainRows}</tbody>
+    ${otherRows ? `<tbody class="others"><tr class="sep"><td colspan="6">${SIDE_LABEL[R.side === 'groom' ? 'bride' : 'groom']}の該当者</td></tr>${otherRows}</tbody>` : ''}
+  </table>`;
+}
+function rowHTML(g) {
+  const items = itemsHTML(g);
+  return `<tr class="${cls(g)}" data-id="${esc(g.id)}">
+    <td class="c-rid"><span class="rid${g.reception_id ? '' : ' none'}">${g.reception_id ? esc(g.reception_id) : '未発番'}</span></td>
+    <td class="c-nm"><b>${esc(fullName(g)) || '（名前なし）'}</b><small>${esc(latin(g))}</small></td>
+    <td class="c-side">${sideBadge(g)}</td>
+    <td class="c-tb">${g.table ? `<b>${esc(g.table)}</b>${g.seat ? ` <small>席 ${g.seat}</small>` : ''}` : '<small>未定</small>'}</td>
+    <td class="c-items">${items ? `<div class="items">${items}</div>` : '<small class="none">—</small>'}</td>
+    <td class="c-chk"><div class="chk">${checkHTML(g)}</div>${R.pendingIds.has(g.id) ? '<div class="pend">未送信</div>' : ''}</td>
+  </tr>`;
 }
 
 /* ---------------- 操作（失敗しても手元の表示を先に変え、キューで再送する） ---------------- */
 function confirmBox(msg) {
   return new Promise(res => {
     $('#confirm-msg').textContent = msg; $('#confirm').hidden = false;
-    const done = v => { $('#confirm').hidden = true; $('#confirm-yes').onclick = $('#confirm-no').onclick = null; res(v); };
+    const done = v => { $('#confirm').hidden = true; $('#confirm-yes').onclick = $('#confirm-no').onclick = null; document.removeEventListener('keydown', onKey); res(v); if (isPC()) $('#q').focus(); };
+    const onKey = e => { if (e.key === 'Escape') { e.preventDefault(); done(false); } else if (e.key === 'Enter') { e.preventDefault(); done(true); } };
     $('#confirm-yes').onclick = () => done(true); $('#confirm-no').onclick = () => done(false);
+    /* ダイアログを開いた Enter 自身で確定しないよう、キー監視は次のティックから */
+    setTimeout(() => document.addEventListener('keydown', onKey), 0);
+    $('#confirm-yes').focus();
   });
 }
 function toast(msg, kind = '') {
@@ -146,42 +210,54 @@ async function flush() {
   }
   flushing = false;
 }
-
-document.addEventListener('click', async e => {
-  const c = e.target.closest('[data-checkin]');
-  if (c) {
-    const g = R.guests.find(x => x.id === c.dataset.checkin); if (!g) return;
-    if (c.dataset.undo) {
-      if (!await confirmBox(`${fullName(g)} さんの受付を取り消しますか。`)) return;
-      g.checked_in_at = null; g.checked_in_by = null;
-      enqueue({ guestId: g.id, path: 'checkin', body: { guest_id: g.id, undo: true } });
-      return;
-    }
-    const left = g.items.filter(i => !i.handed_at);
-    if (left.length && !await confirmBox(`お渡し物があります（${left.map(i => i.label).join('・')}）。お渡し前ですが受付済にしますか。`)) return;
-    g.checked_in_at = new Date().toISOString(); g.checked_in_by = R.me.label;
-    enqueue({ guestId: g.id, path: 'checkin', body: { guest_id: g.id } });
+async function checkIn(g) {
+  if (g.checked_in_at) {
+    if (!await confirmBox(`${fullName(g)} さんの受付を取り消しますか。`)) return;
+    g.checked_in_at = null; g.checked_in_by = null;
+    enqueue({ guestId: g.id, path: 'checkin', body: { guest_id: g.id, undo: true } });
     return;
   }
-  const h = e.target.closest('[data-hand]');
-  if (h) {
-    const g = R.guests.find(x => x.id === h.dataset.g); const it = g?.items.find(i => i.id === h.dataset.hand); if (!it) return;
-    if (h.dataset.undo) {
-      if (!await confirmBox(`「${it.label}」のお渡し済を取り消しますか。`)) return;
-      it.handed_at = null; it.handed_by = null;
-      enqueue({ guestId: g.id, path: `items/${it.id}/hand`, body: { undo: true } });
-      return;
-    }
-    it.handed_at = new Date().toISOString(); it.handed_by = R.me.label;
-    enqueue({ guestId: g.id, path: `items/${it.id}/hand`, body: {} });
+  const left = g.items.filter(i => !i.handed_at);
+  if (left.length && !await confirmBox(`お渡し物があります（${left.map(i => i.label).join('・')}）。お渡し前ですが受付済にしますか。`)) return;
+  g.checked_in_at = new Date().toISOString(); g.checked_in_by = R.me.label;
+  enqueue({ guestId: g.id, path: 'checkin', body: { guest_id: g.id } });
+}
+async function hand(g, it) {
+  if (it.handed_at) {
+    if (!await confirmBox(`「${it.label}」のお渡し済を取り消しますか。`)) return;
+    it.handed_at = null; it.handed_by = null;
+    enqueue({ guestId: g.id, path: `items/${it.id}/hand`, body: { undo: true } });
+    return;
   }
+  it.handed_at = new Date().toISOString(); it.handed_by = R.me.label;
+  enqueue({ guestId: g.id, path: `items/${it.id}/hand`, body: {} });
+}
+
+document.addEventListener('click', e => {
+  const c = e.target.closest('[data-checkin]');
+  if (c) { const g = R.guests.find(x => x.id === c.dataset.checkin); if (g) checkIn(g); return; }
+  const h = e.target.closest('[data-hand]');
+  if (h) { const g = R.guests.find(x => x.id === h.dataset.g); const it = g?.items.find(i => i.id === h.dataset.hand); if (it) hand(g, it); }
 });
 $('#q').addEventListener('input', e => { R.q = e.target.value; render(); });
+/* v2: キーボード操作。Esc で検索をクリア、5桁で1件だけ一致していれば Enter で受付 */
+$('#q').addEventListener('keydown', e => {
+  if (e.key === 'Escape') { e.preventDefault(); $('#q').value = ''; R.q = ''; render(); }
+  else if (e.key === 'Enter' && R.hit) { e.preventDefault(); checkIn(R.hit); }
+});
 $('#filters').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   R.filter = b.dataset.f;
-  document.querySelectorAll('#filters button').forEach(x => x.classList.toggle('on', x === b));
+  $$('#filters button').forEach(x => x.classList.toggle('on', x === b));
   render();
 });
+$('#side').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  R.side = b.dataset.s;
+  try { localStorage.setItem(SIDE_KEY, R.side); } catch {}
+  paintSide(); render();
+});
 window.addEventListener('online', flush);
+window.matchMedia('(min-width: 1024px)').addEventListener('change', render);
+window.matchMedia('(min-width: 768px)').addEventListener('change', render);
 boot();

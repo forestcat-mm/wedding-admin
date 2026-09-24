@@ -13,6 +13,7 @@
    ============================================================ */
 
 const COOKIE = 'rcpt';
+const SIDES = ['groom', 'bride', 'all'];
 const COOKIE_DEFAULT_DAYS = 7;
 const LAST_USED_MIN_INTERVAL_MS = 60 * 1000;   /* last_used_at は最長1分に1回 */
 
@@ -117,12 +118,12 @@ function cookieHeader(value, maxAgeSec) {
 const tokenAlive = t => !!t && t.is_active === true && (!t.expires_at || new Date(t.expires_at).getTime() > Date.now());
 
 async function tokenByCode(env, code) {
-  const rows = await sbGet(env, `reception_tokens?code=eq.${encodeURIComponent(code)}&select=id,code,label,is_active,expires_at,last_used_at&limit=1`);
+  const rows = await sbGet(env, `reception_tokens?code=eq.${encodeURIComponent(code)}&select=id,code,label,is_active,expires_at,last_used_at,default_side&limit=1`);
   return rows[0] || null;
 }
 async function tokenById(env, id) {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
-  const rows = await sbGet(env, `reception_tokens?id=eq.${id}&select=id,code,label,is_active,expires_at,last_used_at&limit=1`);
+  const rows = await sbGet(env, `reception_tokens?id=eq.${id}&select=id,code,label,is_active,expires_at,last_used_at,default_side&limit=1`);
   return rows[0] || null;
 }
 
@@ -152,7 +153,7 @@ async function authenticate(request, env, ctx) {
   const auth = request.headers.get('authorization') || '';
   if (/^bearer\s+/i.test(auth)) {
     const email = await verifySupabaseUser(env, auth.replace(/^bearer\s+/i, '').trim());
-    if (email && isAdminEmail(env, email)) return { via: 'admin', label: `admin:${email}`, email };
+    if (email && isAdminEmail(env, email)) return { via: 'admin', label: `admin:${email}`, email, defaultSide: 'all' };
     return null;
   }
   const parsed = await parseCookieValue(env, readCookie(request, COOKIE));
@@ -164,7 +165,7 @@ async function authenticate(request, env, ctx) {
     const upd = sbPatch(env, `reception_tokens?id=eq.${t.id}`, { last_used_at: new Date().toISOString() }, false).catch(() => {});
     ctx?.waitUntil ? ctx.waitUntil(upd) : await upd;
   }
-  return { via: 'token', label: t.label || '受付', tokenId: t.id };
+  return { via: 'token', label: t.label || '受付', tokenId: t.id, defaultSide: SIDES.includes(t.default_side) ? t.default_side : 'all' };
 }
 async function verifySupabaseUser(env, accessToken) {
   if (!accessToken) return null;
@@ -191,7 +192,7 @@ async function receptionApi(request, env, url, ctx) {
 
   if (rest === 'me') {
     if (request.method !== 'GET') return noStore(json({ error: 'method' }, 405));
-    return noStore(json({ ok: true, via: who.via, label: who.label }));
+    return noStore(json({ ok: true, via: who.via, label: who.label, default_side: who.defaultSide || 'all' }));
   }
   if (rest === 'guests') {
     if (request.method !== 'GET') return noStore(json({ error: 'method' }, 405));
@@ -223,39 +224,50 @@ async function readJson(request) {
   try { return await request.json(); } catch { return null; }
 }
 
-/* 受付用のゲスト一覧。連絡先・メッセージ・アレルギーなどは列を指定して取らない */
+/* 受付用のゲスト一覧。連絡先・メッセージ・アレルギーなどは列を指定して取らない。
+   v2: 対象は「出席予定 かつ 配席済み」だけ（サーバー側で絞る）。
+     出席予定＝guests.deleted_at が null で、招待者に紐付いた有効な回答（replies_admin.deleted_at が null、
+              superseded_by が null）の attending が true
+     配席済み＝その回答の本人（reply_people idx=0）または未回答の仮配席（person_type='guest'）に seating_assignments がある
+     side   ＝guests.side、無ければ回答の side */
 async function guestList(env) {
   const [guests, items, seats, tables, replies, people] = await Promise.all([
-    sbGet(env, 'guests?deleted_at=is.null&select=id,reception_id,family_name,given_name,family_name_latin,given_name_latin,checked_in_at,checked_in_by&order=family_name_latin.nullslast,family_name'),
+    sbGet(env, 'guests?deleted_at=is.null&select=id,reception_id,family_name,given_name,family_name_latin,given_name_latin,side,checked_in_at,checked_in_by&order=family_name_latin.nullslast,family_name'),
     sbGet(env, 'reception_items?select=id,guest_id,label,note,handed_at,handed_by,sort&order=sort,created_at'),
     sbGet(env, 'seating_assignments?select=table_id,seat_index,person_type,person_id'),
     sbGet(env, 'seating_tables?select=id,label'),
-    sbGet(env, 'replies_admin?deleted_at=is.null&superseded_by=is.null&matched_guest_id=not.is.null&select=id,matched_guest_id'),
+    sbGet(env, 'replies_admin?deleted_at=is.null&superseded_by=is.null&matched_guest_id=not.is.null&attending=eq.true&select=id,matched_guest_id,side'),
     sbGet(env, 'reply_people?idx=eq.0&deleted_at=is.null&select=id,reply_id'),
   ]);
   const tableById = new Map(tables.map(t => [t.id, t.label]));
   const seatByPerson = new Map(seats.map(a => [`${a.person_type}:${a.person_id}`, a]));
-  const replyOfGuest = new Map(replies.map(r => [r.matched_guest_id, r.id]));
+  const replyOfGuest = new Map(replies.map(r => [r.matched_guest_id, r]));
   const person0OfReply = new Map(people.map(p => [p.reply_id, p.id]));
   const itemsOf = new Map();
   for (const it of items) {
     if (!itemsOf.has(it.guest_id)) itemsOf.set(it.guest_id, []);
     itemsOf.get(it.guest_id).push({ id: it.id, label: it.label, note: it.note, handed_at: it.handed_at, handed_by: it.handed_by, sort: it.sort });
   }
-  return guests.map(g => {
-    const rid = replyOfGuest.get(g.id);
-    const pid = rid ? person0OfReply.get(rid) : null;
+  const out = [];
+  for (const g of guests) {
+    const r = replyOfGuest.get(g.id);
+    if (!r) continue;                                            /* 出席予定でない（未回答・欠席） */
+    const pid = person0OfReply.get(r.id);
     const a = (pid && seatByPerson.get(`reply_person:${pid}`)) || seatByPerson.get(`guest:${g.id}`) || null;
-    return {
+    if (!a) continue;                                            /* 未配席 */
+    const side = g.side === 'groom' || g.side === 'bride' ? g.side : (r.side === 'groom' || r.side === 'bride' ? r.side : null);
+    out.push({
       id: g.id, reception_id: g.reception_id,
       family_name: g.family_name, given_name: g.given_name,
       family_name_latin: g.family_name_latin, given_name_latin: g.given_name_latin,
-      table: a ? (tableById.get(a.table_id) || null) : null,
-      seat: a && a.seat_index != null ? a.seat_index + 1 : null,
+      side,
+      table: tableById.get(a.table_id) || null,
+      seat: a.seat_index != null ? a.seat_index + 1 : null,
       checked_in_at: g.checked_in_at, checked_in_by: g.checked_in_by,
       items: itemsOf.get(g.id) || [],
-    };
-  });
+    });
+  }
+  return out;
 }
 
 /* ---------------- 案内ページ ---------------- */
