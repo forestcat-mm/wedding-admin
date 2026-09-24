@@ -565,3 +565,18 @@ table.bkprev td.who{white-space:normal;line-height:1.9}
 .seatwrap.pv .previewnote{display:block}
 .notepanel textarea[readonly]{background:#FBF9F5;color:var(--ink2)}
 .btn:disabled{opacity:.45;cursor:default}
+
+/* ---- モードバッジ・使い方・卓の一覧（2026-09-24） ---- */
+.modebadge{font-size:11px;color:var(--ink2);background:#EEE9E2;padding:3px 9px;border-radius:2px;letter-spacing:.08em;white-space:nowrap}
+.modebadge.editing{color:#fff;background:var(--enji)}
+details.help{background:#fff;border:1px solid var(--line);padding:8px 14px;margin:-6px 0 14px}
+details.help summary{cursor:pointer;font-size:12.5px;font-weight:600;color:var(--ink2);letter-spacing:.06em}
+details.help p{margin:6px 0 0;font-size:12.5px;color:var(--ink)}
+details.help[open] summary{margin-bottom:2px}
+.tlist{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
+.tlist .tlhd{display:flex;align-items:baseline;gap:10px;margin-bottom:6px;flex-wrap:wrap}
+.tlist table.tltbl{font-size:12.5px}
+.tlist table.tltbl th,.tlist table.tltbl td{padding:5px 6px;white-space:nowrap}
+.tlist td.num,.tlist th.num{text-align:right}
+.tlist td.act{text-align:right}
+.tlist td.act .btn{margin-left:4px}

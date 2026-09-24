@@ -350,6 +350,15 @@ alter table seating_tables
   add column if not exists grid_col int;
 alter table seating_tables drop constraint if exists seating_tables_capacity_check;
 alter table seating_tables add constraint seating_tables_capacity_check check (capacity between 0 and 10);
+-- 形は丸卓／角卓の2種類（高砂は卓ではない）
+alter table seating_tables drop constraint if exists seating_tables_shape_check;
+alter table seating_tables add constraint seating_tables_shape_check check (shape in ('round','rect'));
+
+-- 卓が列数に満たない行（主に最終行）の並べ方。left / right / center / ends（既定 center）
+-- 卓の位置は行数・列数・各行の卓数と並び順（sort_order）だけで決まり、grid_row / grid_col は保存時にアプリが計算して書く
+alter table event_settings
+  add column if not exists short_row_align text
+    check (short_row_align is null or short_row_align in ('left','right','center','ends'));
 create unique index if not exists seating_tables_grid_uniq on seating_tables (grid_row, grid_col);
 
 -- 編集モードの「保存」：差分を1トランザクションで反映する。
@@ -396,6 +405,7 @@ begin
       layout_rows  = case when p_ev ? 'layout_rows'  then (p_ev->>'layout_rows')::int else layout_rows end,
       layout_cols  = case when p_ev ? 'layout_cols'  then (p_ev->>'layout_cols')::int else layout_cols end,
       row_counts   = case when p_ev ? 'row_counts'   then (select array_agg(v::int) from jsonb_array_elements_text(p_ev->'row_counts') v) else row_counts end,
+      short_row_align = case when p_ev ? 'short_row_align' then p_ev->>'short_row_align' else short_row_align end,
       updated_at   = now()
     where id = 1;
   end if;

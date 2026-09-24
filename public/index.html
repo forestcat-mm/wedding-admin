@@ -156,20 +156,26 @@
 
 <!-- ===== SEATING ===== -->
 <section class="view" id="v-seating">
-  <div class="h2row"><h2>配席</h2><span class="mode" id="sv-mode">プレビュー</span><span class="sp"></span>
-    <button class="btn s" id="sv-edit">編集</button></div>
-  <p class="sub">卓は「行・列・各行の卓数」のグリッドに置きます（各行は左右対称にセンタリング）。既定はプレビューで、配席や卓の操作は「編集」を押してから。編集中の変更はブラウザ内に保持し、「保存」でまとめて反映します。</p>
+  <h2>配席</h2>
+  <details class="help" id="sv-help" open>
+    <summary>使い方</summary>
+    <p>卓の並びは、行数・列数・各行の卓数で決まります。卓が足りない行は、並べ方（左寄せ・右寄せ・中央寄せ・両端寄せ）を選べます。</p>
+    <p>ふだんはプレビューモードで、画面を触っても配席は変わりません。配席や卓の設定を変えるときは「編集モードにする」を押してください。</p>
+    <p>編集中の変更はまだ保存されていません。「保存」を押すとまとめて反映され、「変更を破棄」を押すと元に戻ります。</p>
+  </details>
 
   <div class="editband" id="sv-editband" hidden>
     <b>編集中</b>（未保存の変更 <b id="sv-nchg">0</b> 件）
     <span class="note">配席・卓の移動・卓名／定員／メモ・行列設定・全体の申し送りは「保存」までDBに書きません。</span>
     <span class="sp"></span>
-    <button class="btn s o" id="sv-discard">破棄</button>
+    <button class="btn s o" id="sv-discard">変更を破棄</button>
     <button class="btn s" id="sv-save">保存</button>
   </div>
 
   <div class="panel seatbar">
     <div class="row" style="margin:0">
+      <span class="modebadge" id="sv-mode">プレビューモード</span>
+      <button class="btn s" id="sv-edit">編集モードにする</button>
       <span class="sstat"><em id="sv-done">0</em><small>配席済み</small><small class="of">出席 <em id="sv-att">0</em> 名中</small></span>
       <span class="sstat"><em id="sv-un">0</em><small>未配席</small></span>
       <span class="sstat"><em id="sv-prov">0</em><small>仮配席</small></span>
@@ -209,7 +215,8 @@
         <span class="sp"></span>
       </div>
       <div class="canvasbox" id="sv-box"></div>
-      <p class="note" style="margin:8px 0 0">編集モードで：卓をダブルクリック（タッチは長押し）で卓名・定員・形・メモ・配席の入れ替えを編集。卓をドラッグして別の卓に重ねると位置を入れ替えます。📝はメモ付きの卓で、ホバーすると内容が出ます。席にカーソルを合わせると名前の左に出る「×」で未配席に戻します。空席をクリックすると、未配席の人を選んでその席に配席できます。定員0の卓（物置きなど）は卓名だけの小さな円で、配席できません。</p>
+      <p class="note" style="margin:8px 0 0">編集モードで：卓をダブルクリック（タッチは長押し）で卓名・定員・形（丸卓／角卓）・メモ・配席の入れ替えを編集。卓の順番は下の「卓の一覧」の上下ボタンで変えます。📝はメモ付きの卓で、ホバーすると内容が出ます。席にカーソルを合わせると名前の左に出る「×」で未配席に戻します。空席をクリックすると、未配席の人を選んでその席に配席できます。定員0の卓（物置きなど）は形の輪郭だけを破線で描き、配席できません。</p>
+      <div class="tlist" id="sv-tlist" hidden></div>
     </div>
 
     <aside class="panel sidepanel" id="sv-side">

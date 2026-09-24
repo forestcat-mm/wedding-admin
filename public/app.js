@@ -3430,6 +3430,8 @@ const VB = { w: 1400, h: 1000, pad: 24 };
 const MAX_ROWS = 4, MAX_COLS = 6, SEATS_PER_TABLE = 10;
 const DEF_LAYOUT = { rows: 3, cols: 4, counts: [4, 4, 4] };
 const DEF_TITLE = '両家結婚披露宴御座席表';
+const ALIGNS = [['left', '左寄せ'], ['right', '右寄せ'], ['center', '中央寄せ'], ['ends', '両端寄せ']];
+const alignOf = (ev = S.ev) => ALIGNS.some(([k]) => k === ev?.short_row_align) ? ev.short_row_align : 'center';
 const ROW_MID = 59, ROW_GAP = 25;        /* 行ブロックの中心（％）と最大の行間 */
 const SHAPES = [['round', '丸卓'], ['rect', '角卓']];
 
@@ -3449,7 +3451,15 @@ function layoutOf(ev = S.ev) {
 function gridPos(r, c, L = layoutOf()) {
   const n = L.counts[r] || 0;
   const pitch = 100 / L.cols;
-  const x = 50 + (c - (n - 1) / 2) * pitch;
+  /* A2: 卓が列数に満たない行の並べ方。列数と同じ行は影響を受けない */
+  const al = n >= L.cols ? 'center' : alignOf();
+  let x;
+  if (al === 'left') x = (c + 0.5) * pitch;
+  else if (al === 'right') x = (L.cols - n + c + 0.5) * pitch;
+  else if (al === 'ends') {
+    const left = Math.ceil(n / 2), right = n - left;     /* 奇数は左に1つ多く */
+    x = c < left ? (c + 0.5) * pitch : (L.cols - right + (c - left) + 0.5) * pitch;
+  } else x = 50 + (c - (n - 1) / 2) * pitch;             /* 中央寄せ：奇数は半列ずらして対称に */
   const gap = L.rows === 1 ? 0 : Math.min(ROW_GAP, 52 / (L.rows - 1));
   const y0 = ROW_MID - (L.rows - 1) * gap / 2;
   return { x: +x.toFixed(2), y: +(y0 + r * gap).toFixed(2) };
@@ -3459,9 +3469,11 @@ function layoutScale(L = layoutOf()) {
   return Math.min(L.rows >= 4 ? 0.76 : 1, L.cols >= 6 ? 0.94 : 1);
 }
 const tableAt = (r, c) => T.tables.find(t => t.grid_row === r && t.grid_col === c) || null;
-/* グリッド順（行→行内）。sort_order もこの順 */
+/* 卓の並び（sort_order 順）。前列の左から右、次の行の左から右 */
 const orderedTables = () => T.tables.slice()
-  .sort((a, b) => (a.grid_row ?? 99) - (b.grid_row ?? 99) || (a.grid_col ?? 99) - (b.grid_col ?? 99));
+  .sort((a, b) => (a.sort_order ?? 9999) - (b.sort_order ?? 9999)
+    || (a.grid_row ?? 99) - (b.grid_row ?? 99) || (a.grid_col ?? 99) - (b.grid_col ?? 99));
+const gridTotal = (L = layoutOf()) => L.counts.reduce((a, b) => a + b, 0);
 /* 配席できる卓（定員 1 以上） */
 const guestTables = () => orderedTables().filter(t => (t.capacity || 0) > 0);
 /* F1: 参加ゲスト数＝有効な出席回答の reply_people（同行者含む・削除済み除く） */
@@ -3478,17 +3490,32 @@ function nextLabel() {
 }
 const uuid = () => crypto.randomUUID();
 /* sort_order と x/y（互換用）をグリッドから決め直す */
+/* A1: 並び順（sort_order）から grid_row / grid_col と x / y を決め直す。
+   位置は行数・列数・各行の卓数と並び順だけで決まり、手で動かす操作は無い */
 function recomputeOrder() {
   const L = layoutOf();
+  const slots = [];
+  for (let r = 0; r < L.rows; r++) for (let c = 0; c < L.counts[r]; c++) slots.push([r, c]);
   orderedTables().forEach((t, i) => {
-    const p = gridPos(t.grid_row, t.grid_col, L);
-    t.sort_order = i + 1; t.x = p.x; t.y = p.y;
+    const [r, c] = slots[i] || [L.rows - 1, (L.counts[L.rows - 1] || 1) - 1];
+    t.sort_order = i + 1; t.grid_row = r; t.grid_col = c;
+    const p = gridPos(r, c, L);
+    t.x = p.x; t.y = p.y;
   });
+}
+/* A3: 卓の一覧の上下ボタン。隣と sort_order を入れ替える */
+function moveTable(id, dir) {
+  const list = orderedTables();
+  const i = list.findIndex(t => t.id === id), j = i + dir;
+  if (i < 0 || j < 0 || j >= list.length) return;
+  [list[i].sort_order, list[j].sort_order] = [list[j].sort_order, list[i].sort_order];
+  recomputeOrder(); renderSeating();
 }
 function newTable(r, c) {
   const p = gridPos(r, c);
+  const last = T.tables.reduce((m, t) => Math.max(m, t.sort_order || 0), 0);
   return { id: uuid(), label: nextLabel(), capacity: SEATS_PER_TABLE, shape: 'round', x: p.x, y: p.y,
-           w: null, h: null, rotation: 0, memo: null, sort_order: 0, grid_row: r, grid_col: c };
+           w: null, h: null, rotation: 0, memo: null, sort_order: last + 1, grid_row: r, grid_col: c };
 }
 
 const T = {
@@ -3563,43 +3590,32 @@ async function migrateSeating() {
   if (ev0.layout_rows == null || ev0.layout_cols == null || !Array.isArray(ev0.row_counts)) {
     Object.assign(evPatch, { layout_rows: L.rows, layout_cols: L.cols, row_counts: L.counts });
   }
-  const missing = T.tables.filter(t => t.grid_row == null || t.grid_col == null
-    || t.grid_row >= L.rows || t.grid_col >= (L.counts[t.grid_row] || 0));
-  const patches = [];
-  if (missing.length) {
-    /* 全卓が収まるように行数・列数を広げる */
+  /* 卓が全部収まるように行数・列数を広げる */
+  {
     const n = T.tables.length;
-    let { rows, cols, counts } = L;
+    let { rows, cols, counts } = L, grew = false;
     while (counts.reduce((a, b) => a + b, 0) < n) {
       const r = counts.findIndex(c => c < cols);
       if (r >= 0) counts[r]++;
       else if (rows < MAX_ROWS) { rows++; counts.push(1); }
       else if (cols < MAX_COLS) { cols++; }
       else break;
+      grew = true;
     }
-    L = { rows, cols, counts };
-    Object.assign(evPatch, { layout_rows: rows, layout_cols: cols, row_counts: counts });
-    const taken = new Set(T.tables.filter(t => !missing.includes(t))
-      .map(t => `${t.grid_row},${t.grid_col}`));
-    const free = [];
-    for (let r = 0; r < rows; r++) for (let c = 0; c < counts[r]; c++)
-      if (!taken.has(`${r},${c}`)) free.push([r, c]);
-    for (const t of missing.slice().sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))) {
-      const [r, c] = free.shift() || [0, 0];
-      t.grid_row = r; t.grid_col = c;
-    }
+    if (grew) { L = { rows, cols, counts }; Object.assign(evPatch, { layout_rows: rows, layout_cols: cols, row_counts: counts }); }
   }
   if (Object.keys(evPatch).length) {
     Object.assign(S.ev, evPatch);
     const { error } = await sb.from('event_settings').upsert({ id: 1, ...evPatch }, { onConflict: 'id' });
     if (error) toast('レイアウト設定の保存に失敗：' + error.message, 'err');
   }
-  /* 空いている位置に空の卓を足す */
+  /* 位置が余っていれば空の卓を足し、並び順（sort_order）からグリッドを割り当て直す */
+  const before = new Map(T.tables.map(t => [t.id, `${t.grid_row},${t.grid_col},${t.sort_order}`]));
   const adds = [];
-  for (let r = 0; r < L.rows; r++) for (let c = 0; c < L.counts[r]; c++)
-    if (!tableAt(r, c)) { const t = newTable(r, c); T.tables.push(t); adds.push(t); }
+  for (let k = T.tables.length; k < gridTotal(L); k++) { const t = newTable(0, 0); T.tables.push(t); adds.push(t); }
   recomputeOrder();
-  for (const t of [...missing, ...adds]) patches.push(t);
+  const missing = T.tables.filter(t => before.has(t.id) && before.get(t.id) !== `${t.grid_row},${t.grid_col},${t.sort_order}`);
+  const patches = [...missing, ...adds];
   if (!patches.length) return;
   /* 一意制約 (grid_row, grid_col) に当たらないよう、動かす卓の位置をいったん外してから書く */
   const movedIds = missing.map(t => t.id);
@@ -3764,9 +3780,11 @@ async function backfillSeats() {
 const LIST_HALF = 150, LIST_ROWH = 26;
 function tableGeom(tb) {
   const s = layoutScale();
-  if ((tb.capacity || 0) <= 0) return { mode: 'zero', r: 34 * s };   /* B6: 定員0＝卓名だけの円 */
+  /* B2: 定員0＝選んだ形の輪郭を破線で描き、卓名だけ */
+  if ((tb.capacity || 0) <= 0) return { mode: 'zero', shape: tb.shape === 'rect' ? 'rect' : 'round', r: 34 * s, w: 150 * s, h: 54 * s };
+  /* B1: 角卓は角丸の長方形。席は長辺の上下に振り分ける */
   if (tb.shape === 'rect') {
-    return { mode: 'box', w: tb.w ? tb.w * VB.w / 100 : 220, h: tb.h ? tb.h * VB.h / 100 : 90 };
+    return { mode: 'box', w: tb.w ? tb.w * VB.w / 100 : 300 * s, h: tb.h ? tb.h * VB.h / 100 : 76 * s };
   }
   const cap = Math.max(1, tb.capacity || 1);
   if (T.view === 'list') {
@@ -3789,8 +3807,10 @@ function seatPos(tb, i, cap, g) {
     const k = left ? i : i - g.rowsL;
     return { left, y: -(n - 1) * g.rowH / 2 + k * g.rowH };
   }
-  const step = g.w / (cap + 1);                 /* 角卓は箱の上に並べる */
-  return { x: -g.w / 2 + step * (i + 1), y: -g.h / 2 - 13, c: 0 };
+  /* B1: 角卓は長辺の上下に振り分ける（前半＝上、後半＝下）。名前枠は互い違いに高さを変えて重ねない */
+  const nTop = Math.ceil(cap / 2), top = i < nTop, n = top ? nTop : cap - nTop, k = top ? i : i - nTop;
+  const step = g.w / (n + 1);
+  return { x: -g.w / 2 + step * (k + 1), y: top ? -g.h / 2 - 13 : g.h / 2 + 13, c: 0, alt: k % 2 };
 }
 const tableCenter = tb => ({ cx: tb.x * VB.w / 100, cy: tb.y * VB.h / 100 });
 
@@ -4015,7 +4035,6 @@ const SEAT_CSS_UI = `
 #sv-canvas .chip,#sv-canvas .tb,#sv-canvas .seat{cursor:pointer;touch-action:none}
 #sv-canvas .seatgrp:hover .cxh,#sv-canvas .seatgrp:hover .cxt{opacity:1}
 #sv-canvas .seatgrp:hover .cxh{pointer-events:all;cursor:pointer}
-#sv-canvas .tb.drag{opacity:.75}
 `;
 
 /* 見出しの日付・会場（右上に小さく） */
@@ -4222,10 +4241,12 @@ function tableSVG(tb) {
   let s = `<g class="${cls}" data-id="${esc(tb.id)}" transform="translate(${cx.toFixed(1)},${cy.toFixed(1)})">`;
 
   if (g.mode === 'zero') {
-    /* B6: 定員0の卓（物置き・ケーキ卓など）は卓名だけの小さな円。席も名前欄も描かない */
-    s += `<circle class="thit" r="${g.r + 10}" pointer-events="all"/>`
-      +  `<circle class="tbody" r="${g.r}"/>`
-      +  `<text class="tlabel zl" y="6">${esc(tb.label)}</text>`;
+    /* B2: 定員0の卓（物置き・ケーキ卓など）は形の輪郭を破線で描き、中央に卓名だけ。席も名前欄も描かない */
+    s += g.shape === 'rect'
+      ? `<rect class="thit" x="${-g.w / 2 - 10}" y="${-g.h / 2 - 10}" width="${g.w + 20}" height="${g.h + 20}" pointer-events="all"/>`
+        + `<rect class="tbody" x="${-g.w / 2}" y="${-g.h / 2}" width="${g.w}" height="${g.h}" rx="8"/>`
+      : `<circle class="thit" r="${g.r + 10}" pointer-events="all"/><circle class="tbody" r="${g.r}"/>`;
+    s += `<text class="tlabel zl" y="6">${esc(tb.label)}</text>`;
   } else if (g.mode === 'round') {
     s += `<circle class="thit" r="${g.Rs + 14}" pointer-events="all"/>`
       +  `<circle class="tbody" r="${g.r}"/>`
@@ -4240,16 +4261,17 @@ function tableSVG(tb) {
       : `<circle class="tbody" r="${g.r}"/><text class="tlabel" y="5">${esc(tb.label)}</text>`
         + `<text class="thead" y="${-h / 2 - 12}">${esc(kindHead(tb))}　${used} / ${cap}</text>`;
   } else {
-    s += `<rect class="thit" x="${-g.w / 2 - 10}" y="${-g.h / 2 - 46}" width="${g.w + 20}" height="${g.h + 58}" pointer-events="all"/>`
-      +  `<rect class="tbody" x="${-g.w / 2}" y="${-g.h / 2}" width="${g.w}" height="${g.h}" rx="3"/>`
+    s += `<rect class="thit" x="${-g.w / 2 - 10}" y="${-g.h / 2 - 72}" width="${g.w + 20}" height="${g.h + 144}" pointer-events="all"/>`
+      +  `<rect class="tbody" x="${-g.w / 2}" y="${-g.h / 2}" width="${g.w}" height="${g.h}" rx="10"/>`
       +  `<text class="tlabel" y="2">${esc(tb.label)}</text>`
       +  (EX.guest ? '' : `<text class="tcount" y="19">${used} / ${cap}</text>`);
   }
 
   /* 卓メモ。編集用の印なので書き出しには出さない。表形式では中央の円の真上に置く */
   if (!EXPORTING) {
-    const mx = g.mode === 'round' ? g.r * 0.52 : g.mode === 'zero' ? g.r * 0.7 : g.mode === 'list' ? 0 : g.w / 2 - 13;
-    const my = g.mode === 'round' ? -g.r * 0.52 : g.mode === 'zero' ? -g.r * 0.7 : g.mode === 'list' ? -g.r - 13 : -g.h / 2 + 15;
+    const zr = g.mode === 'zero' && g.shape === 'rect';
+    const mx = g.mode === 'round' ? g.r * 0.52 : zr ? g.w / 2 - 12 : g.mode === 'zero' ? g.r * 0.7 : g.mode === 'list' ? 0 : g.w / 2 - 13;
+    const my = g.mode === 'round' ? -g.r * 0.52 : zr ? -g.h / 2 + 12 : g.mode === 'zero' ? -g.r * 0.7 : g.mode === 'list' ? -g.r - 13 : -g.h / 2 + 15;
     s += `<g class="tmemo${tb.memo ? ' has' : ''}" data-memo="${esc(tb.id)}" transform="translate(${mx.toFixed(1)},${my.toFixed(1)})">`
       +  `<title>${esc(tb.memo ? `メモ：${tb.memo}` : 'メモを追加')}</title>`
       +  `<circle r="10" fill="#fff" fill-opacity="0" pointer-events="all"/><text y="4.5">📝</text></g>`;
@@ -4258,7 +4280,7 @@ function tableSVG(tb) {
   for (let i = 0; i < cap; i++) s += seatSVG(tb, i, seats[i], cap, g);
   /* 定員から外れてしまった割当（定員を減らしたあとなど）は卓の下に並べる */
   extra.forEach((a, k) => { s += `<g class="seatgrp">` + chipSVG(a, 0,
-    ((g.mode === 'round' ? g.Rs + 26 : g.mode === 'zero' ? g.r + 22 : 60) + k * 26), 'c', tb, null) + `</g>`; });
+    ((g.mode === 'round' ? g.Rs + 26 : g.mode === 'zero' ? (g.shape === 'rect' ? g.h / 2 + 18 : g.r + 22) : g.h / 2 + 76) + k * 26), 'c', tb, null) + `</g>`; });
   return s + '</g>';
 }
 /* C3: 卓の上の見出し */
@@ -4289,7 +4311,8 @@ function seatSVG(tb, i, a, cap, g) {
   if (a) {
     /* ラベルは席の外側。左右に振り分け、真上・真下の席は縦にずらして重なりを避ける */
     const centered = Math.abs(pos.c) < 0.2;
-    if (centered) s += chipSVG(a, pos.x, pos.y + (pos.y < 0 ? -22 : 22), 'c', tb, i);
+    const off = 22 + (pos.alt ? 26 : 0);
+    if (centered) s += chipSVG(a, pos.x, pos.y + (pos.y < 0 ? -off : off), 'c', tb, i);
     else s += chipSVG(a, pos.x, pos.y, pos.c >= 0 ? 'r' : 'l', tb, i);
   }
   return s + '</g>';
@@ -4427,7 +4450,14 @@ function renderGridBar() {
     <label class="cntbox">行 <select id="sv-rows"${dis}>${opt(MAX_ROWS, L.rows)}</select></label>
     <label class="cntbox">列 <select id="sv-cols"${dis}>${opt(MAX_COLS, L.cols)}</select></label>
     <span class="cntbox rc">各行の卓数 ${L.counts.map((c, r) =>
-      `<input type="number" class="rcin" data-r="${r}" min="0" max="${L.cols}" value="${c}" title="${r + 1}行目"${dis}>`).join('')}</span>`;
+      `<input type="number" class="rcin" data-r="${r}" min="0" max="${L.cols}" value="${c}" title="${r + 1}行目"${dis}>`).join('')}</span>
+    <label class="cntbox" title="卓が列数に満たない行（主に最終行）の並べ方">足りない行の並べ方 <select id="sv-align"${dis}>${ALIGNS.map(([k, l]) =>
+      `<option value="${k}"${alignOf() === k ? ' selected' : ''}>${l}</option>`).join('')}</select></label>`;
+  $('#sv-align').addEventListener('change', e => {
+    if (needEdit()) { renderGridBar(); return; }
+    S.ev = { ...(S.ev || {}), short_row_align: e.target.value };
+    recomputeOrder(); renderSeating();
+  });
   $('#sv-rows').addEventListener('change', e => changeGrid({ rows: +e.target.value }));
   $('#sv-cols').addEventListener('change', e => changeGrid({ cols: +e.target.value }));
   $$('#sv-grid .rcin').forEach(inp => inp.addEventListener('change', () => {
@@ -4447,6 +4477,25 @@ function renderGridBar() {
   $('#sv-min').classList.toggle('short', short > 0);
 }
 
+/* A3: 編集モードの「卓の一覧」。上下ボタンで並びを変える（前列の左から右、次の行の左から右） */
+function renderTableList() {
+  const box = $('#sv-tlist');
+  box.hidden = !T.edit;
+  if (!T.edit) { box.innerHTML = ''; return; }
+  const list = orderedTables();
+  const shapeName = t => (SHAPES.find(([v]) => v === t.shape) || SHAPES[0])[1];
+  box.innerHTML = `<div class="tlhd"><b>卓の一覧</b><span class="note">上下ボタンで並びを変えます。並びは前列の左から右、次の行の左から右の順です。卓名などは「編集」から。</span></div>
+    <table class="tltbl"><thead><tr><th>順</th><th>位置</th><th>卓名</th><th>形</th><th class="num">定員</th><th class="num">配席</th><th></th></tr></thead><tbody>
+    ${list.map((t, i) => `<tr data-id="${esc(t.id)}"><td class="num">${i + 1}</td>
+      <td>${t.grid_row + 1} 行目・${t.grid_col + 1} 番目</td><td><b>${esc(t.label)}</b>${t.memo ? ' <span class="note">📝</span>' : ''}</td>
+      <td>${shapeName(t)}</td><td class="num">${t.capacity}</td><td class="num">${(T.byTable.get(t.id) || []).length}</td>
+      <td class="act"><button class="btn s o" data-up="${esc(t.id)}"${i === 0 ? ' disabled' : ''} title="ひとつ前へ">▲</button>
+        <button class="btn s o" data-down="${esc(t.id)}"${i === list.length - 1 ? ' disabled' : ''} title="ひとつ後ろへ">▼</button>
+        <button class="btn link" data-edit="${esc(t.id)}">編集</button></td></tr>`).join('')}</tbody></table>`;
+  $$('[data-up]', box).forEach(b => b.addEventListener('click', () => moveTable(b.dataset.up, -1)));
+  $$('[data-down]', box).forEach(b => b.addEventListener('click', () => moveTable(b.dataset.down, 1)));
+  $$('[data-edit]', box).forEach(b => b.addEventListener('click', () => openTableModal(b.dataset.edit)));
+}
 /* C2: 編集中の帯と、モードで変わるボタンの状態 */
 function renderEditBar() {
   const n = T.edit ? seatDiff().count : 0;
@@ -4456,8 +4505,9 @@ function renderEditBar() {
   $('#sv-save').disabled = T.saving;
   $('#sv-discard').disabled = T.saving;
   $('#sv-edit').hidden = T.edit;
-  $('#sv-mode').textContent = T.edit ? '編集モード' : 'プレビュー';
+  $('#sv-mode').textContent = T.edit ? '編集モード' : 'プレビューモード';
   $('#sv-mode').classList.toggle('editing', T.edit);
+  renderTableList();
   for (const id of ['sv-bulk', 'sv-swap']) $('#' + id).disabled = !T.edit;
   $('#sv-note').readOnly = !T.edit;
   $('#sv-notehint').textContent = T.edit ? '編集中（保存で反映）' : '編集モードで書き換えられます';
@@ -4552,7 +4602,7 @@ function renderSeatSide() {
    ============================================================ */
 const TB_F = ['label', 'capacity', 'shape', 'memo', 'sort_order', 'grid_row', 'grid_col'];
 const AS_F = ['table_id', 'seat_index', 'person_type', 'person_id', 'provisional'];
-const EV_F = ['seating_note', 'layout_rows', 'layout_cols', 'row_counts'];
+const EV_F = ['seating_note', 'layout_rows', 'layout_cols', 'row_counts', 'short_row_align'];
 const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
 function snapshot() {
@@ -4811,16 +4861,6 @@ function swapTables(aId, bId) {
   indexSeating(); renderSeating();
   toast(`「${A.label}」と「${B.label}」の配席を入れ替えました`, 'ok');
 }
-/* B3: 卓の位置（グリッド）を入れ替える。配席は卓と一緒に動く */
-function swapGrid(aId, bId) {
-  const A = T.tables.find(t => t.id === aId), B = T.tables.find(t => t.id === bId);
-  if (!A || !B || aId === bId) return;
-  [A.grid_row, B.grid_row] = [B.grid_row, A.grid_row];
-  [A.grid_col, B.grid_col] = [B.grid_col, A.grid_col];
-  recomputeOrder();
-  renderSeating();
-  toast(`「${A.label}」と「${B.label}」の位置を入れ替えました`, 'ok');
-}
 function saveTablePatch(tb, patch, msg) {
   Object.assign(tb, patch);
   closeModal('m-table');
@@ -4838,7 +4878,8 @@ function changeGrid(next) {
   const counts = [];
   for (let r = 0; r < rows; r++) counts.push(Math.min(cols, Math.max(0, src[r] ?? cols)));
   const L = { rows, cols, counts };
-  const drop = T.tables.filter(t => t.grid_row >= rows || t.grid_col >= counts[t.grid_row]);
+  const total = gridTotal(L);
+  const drop = orderedTables().slice(total);            /* 並びの末尾から外れる */
   const n = drop.reduce((k, t) => k + (T.byTable.get(t.id) || []).length, 0);
   const run = () => {
     const ids = drop.map(t => t.id);
@@ -4846,8 +4887,7 @@ function changeGrid(next) {
     T.asg = T.asg.filter(a => !ids.includes(a.table_id));
     S.ev = { ...(S.ev || {}), layout_rows: rows, layout_cols: cols, row_counts: counts };
     let added = 0;
-    for (let r = 0; r < rows; r++) for (let c = 0; c < counts[r]; c++)
-      if (!tableAt(r, c)) { T.tables.push(newTable(r, c)); added++; }
+    while (T.tables.length < total) { T.tables.push(newTable(0, 0)); added++; }
     recomputeOrder(); indexSeating(); renderSeating();
     const msg = [];
     if (ids.length) msg.push(`${ids.length} 卓を削除`);
@@ -4995,7 +5035,7 @@ function ghostHTML(kind, id) {
 function beginDrag(d, ev) {
   endDrag();
   T.drag = { ...d, sx: ev.clientX, sy: ev.clientY, moved: false, ghost: null, hov: null };
-  if (d.kind === 'table') {
+  if (d.kind === 'tap') {
     T.drag.lp = setTimeout(() => {
       if (T.drag && !T.drag.moved) { const id = T.drag.id; endDrag(); openTableModal(id); }
     }, 600);
@@ -5011,7 +5051,6 @@ function endDrag() {
     T.drag.hov?.classList.remove('hov');
     T.drag.hovSeat?.classList.remove('drop');
     $('#sv-side')?.classList.remove('hov');
-    $$('#sv-canvas .tb.drag').forEach(g => g.classList.remove('drag'));
   }
   T.drag = null;
   window.removeEventListener('pointermove', onDragMove);
@@ -5041,25 +5080,9 @@ function onDragMove(ev) {
       d.ghost.textContent = ghostHTML(d.kind, d.id);
       document.body.appendChild(d.ghost);
     }
-    if (d.kind === 'table') {
-      d.g = $(`#sv-canvas .tb[data-id="${d.id}"]`);
-      d.g?.classList.add('drag');
-      const tb = T.tables.find(t => t.id === d.id);
-      const c = tableCenter(tb); d.cx = c.cx; d.cy = c.cy;
-    }
   }
   ev.preventDefault();
-  if (d.kind === 'table') {
-    /* B3: 卓はグリッドの位置にしか置けない。ドラッグ中は仮に動かし、ドロップ先の卓を強調する */
-    const r = $('#sv-box').getBoundingClientRect();
-    const k = Math.min(r.width / VB.w, r.height / VB.h);
-    d.g?.setAttribute('transform', `translate(${(d.cx + dx / k).toFixed(1)},${(d.cy + dy / k).toFixed(1)})`);
-    d.g?.setAttribute('pointer-events', 'none');
-    const t = dropTarget(ev.clientX, ev.clientY);
-    const el = t.kind !== 'none' && t.el && t.el !== d.g ? t.el : null;
-    if (d.hov !== el) { d.hov?.classList.remove('hov'); d.hov = el; d.hov?.classList.add('hov'); }
-    return;
-  }
+  if (d.kind === 'tap') return;                  /* A1: 卓そのものは動かせない */
   d.ghost.style.transform = `translate(${ev.clientX + 12}px,${ev.clientY + 10}px)`;
   const t = dropTarget(ev.clientX, ev.clientY);
   if (d.hov !== (t.el || null)) { d.hov?.classList.remove('hov'); d.hov = t.el || null; d.hov?.classList.add('hov'); }
@@ -5073,14 +5096,9 @@ function onDragUp(ev) {
   const t = moved ? dropTarget(ev.clientX, ev.clientY) : null;
   endDrag();
 
-  if (kind === 'table') {
-    if (!moved) {
-      /* タップ：人を選んでいれば、その卓の空き最小席へ */
-      if (T.sel) { const k = T.sel; T.sel = null; assignWithHousehold(k, id); }
-      return;
-    }
-    if (t && t.kind !== 'none' && t.id && t.id !== id) swapGrid(id, t.id);
-    else renderSeating();
+  if (kind === 'tap') {
+    /* タップ：人を選んでいれば、その卓の空き最小席へ。卓は動かせない */
+    if (!moved && T.sel) { const k = T.sel; T.sel = null; assignWithHousehold(k, id); }
     return;
   }
   if (!moved) {                                   /* クリック／タップ */
@@ -5188,7 +5206,7 @@ function openTableModal(id, focusMemo) {
             `<option value="${esc(t.id)}">${esc(t.label)}（${(T.byTable.get(t.id) || []).length} / ${t.capacity} 名）</option>`).join('')}</select>
         <button type="button" class="btn s o" id="tf-swapgo">入れ替え</button>
       </div></div>
-    <p class="note">卓の数は上部バーの「行・列・各行の卓数」で決まります。位置を変えるには卓をドラッグして別の卓と入れ替えてください。</p>
+    <p class="note">卓の数は上部バーの「行・列・各行の卓数」で決まります。位置（順番）はキャンバス下の「卓の一覧」で上下ボタンから変えられます。</p>
     <div class="row" style="justify-content:flex-end;margin:16px 0 0">
       <button class="btn o" data-close>キャンセル</button>
       <button class="btn" id="tf-save">OK</button></div>`;
@@ -5295,7 +5313,7 @@ $('#sv-box').addEventListener('pointerdown', e => {
     renderSeating();
     return;
   }
-  beginDrag({ kind: 'table', id: tb.dataset.id }, e);
+  beginDrag({ kind: 'tap', id: tb.dataset.id }, e);
 });
 $('#sv-box').addEventListener('dblclick', e => {
   const tb = e.target.closest('.tb');
@@ -5323,6 +5341,12 @@ $('#sv-side-f').addEventListener('change', e => { T.sideF = e.target.value; rend
 $('#sv-circle').addEventListener('change', e => { T.circle = e.target.value; renderSeatSide(); });
 $('#sv-sort').addEventListener('change', e => { T.sort = e.target.value; renderSeatSide(); });
 $('#sv-edit').addEventListener('click', enterEdit);
+/* C2: 「使い方」は折りたたみ可能。閉じた状態だけ localStorage に残す */
+{
+  const help = $('#sv-help');
+  help.open = localStorage.getItem('seatHelp') !== '0';
+  help.addEventListener('toggle', () => localStorage.setItem('seatHelp', help.open ? '1' : '0'));
+}
 $('#sv-save').addEventListener('click', saveEdits);
 $('#sv-discard').addEventListener('click', discardEdits);
 /* C1・C3: 全体の申し送りは編集モード中だけ書き換えられ、保存で反映 */
@@ -5751,7 +5775,7 @@ function wireBulkPanel() {
    ============================================================ */
 const EV_DEF = { groom_family: '', groom_given: '', bride_family: '', bride_given: '',
   groom_name_latin: '', bride_name_latin: '', chart_title: '', seating_note: '',
-  layout_rows: null, layout_cols: null, row_counts: null };
+  layout_rows: null, layout_cols: null, row_counts: null, short_row_align: null };
 async function loadEventSettings() {
   try {
     const { data, error } = await sb.from('event_settings').select('*').eq('id', 1).maybeSingle();
