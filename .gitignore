@@ -1,0 +1,7 @@
+# 作業途中のファイル（レポート・スキーマのダンプなど）。配信対象外・コミット対象外
+work/
+
+# Cloudflare Workers のローカルキャッシュ
+.wrangler/
+
+.DS_Store
