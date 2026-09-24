@@ -4,12 +4,12 @@
 -- 同じ DB には Photo Toss（wedding-photos）の表（photos / votes / awards / award_photos /
 -- live_settings / couple_messages）もあるが、それらはこのファイルの対象外。
 --
--- 未反映の作業：
---   sql/2026-09-25_1_share_lookup_page_title.sql  share_lookup に page_title を追加（実行後にこの内容が実DBになる）
---   sql/2026-09-25_2_seating_save.sql              seating_save を作成（同上）
---   sql/2026-09-25_4_drop_groom_name.sql           event_settings.groom_name / bride_name を削除（同上）
+-- 適用済みのマイグレーション（参考）：
+--   docs/archive/migrations/2026-09-25_1_share_lookup_page_title.sql  share_lookup に page_title を追加（2026-09-25 実行済み）
+--   docs/archive/migrations/2026-09-25_2_seating_save.sql              seating_save を作成（実行済み）
+--   docs/archive/migrations/2026-09-25_4_drop_groom_name.sql           event_settings.groom_name / bride_name を削除（実行済み）
 --   sync_rsvp_row / trg_sync_rsvp / mark_superseded / touch_parent_reply の本体は
---   sql/2026-09-25_3_get_function_defs.sql の結果で差し替える（「要差し替え」と記した箇所）
+--   docs/archive/migrations/2026-09-25_3_get_function_defs.sql の結果で差し替える（「要差し替え」と記した箇所）
 -- ============================================================
 
 create extension if not exists pgcrypto;
@@ -369,7 +369,7 @@ begin
 end $$;
 
 -- reply_people が変わったら親 replies_admin.updated_at も更新する
--- ※ 要差し替え：実DBの本体は sql/2026-09-25_3_get_function_defs.sql の結果を貼る
+-- ※ 要差し替え：実DBの本体は docs/archive/migrations/2026-09-25_3_get_function_defs.sql の結果を貼る
 create or replace function touch_parent_reply() returns trigger
 language plpgsql as $$
 begin
@@ -378,7 +378,7 @@ begin
 end $$;
 
 -- 同じ人の以前の回答を superseded_by で古い方に印を付ける（重複回答の判定）
--- ※ 要差し替え：実DBの本体は sql/2026-09-25_3_get_function_defs.sql の結果を貼る。
+-- ※ 要差し替え：実DBの本体は docs/archive/migrations/2026-09-25_3_get_function_defs.sql の結果を貼る。
 --    引数：p_id uuid, p_received timestamptz, p_email text, p_fam text, p_giv text, p_fam_l text, p_giv_l text
 -- create or replace function mark_superseded(p_id uuid, p_received timestamptz, p_email text,
 --   p_fam text, p_giv text, p_fam_l text, p_giv_l text) returns void
@@ -437,7 +437,7 @@ language sql security definer as $$
 $$;
 
 -- シェアページ：トークンとパスワードで友人圏の回答者一覧を返す（anon から呼ぶ）
--- 内容は sql/2026-09-25_1_share_lookup_page_title.sql と同じ
+-- 内容は docs/archive/migrations/2026-09-25_1_share_lookup_page_title.sql と同じ
 create or replace function share_lookup(p_token text, p_password text)
 returns table (family_name text, given_name text, family_name_latin text, given_name_latin text,
                attending boolean, circle_name text, headline text, show_latin boolean,
@@ -464,7 +464,7 @@ begin
 end $$;
 
 -- 配席の編集モードの「保存」（1トランザクション・同時編集の検知）
--- 内容は sql/2026-09-25_2_seating_save.sql と同じ
+-- 内容は docs/archive/migrations/2026-09-25_2_seating_save.sql と同じ
 
 
 create or replace function seating_save(
