@@ -1037,7 +1037,7 @@ function updateBulk() {
 async function bulkJoin(field, label) {
   const ids = [...S.sel].filter(k => k.startsWith('g:')).map(k => k.slice(2));
   if (!ids.length) { toast('招待者を選んでください', 'err'); return; }
-  const { error } = await sb.from('guests').update({ [field]: true, updated_at: new Date().toISOString() }).in('id', ids);
+  const { error } = await sb.from('guests').update({ [field]: true }).in('id', ids);
   if (error) { toast('失敗：' + error.message, 'err'); return; }
   toast(`${ids.length} 名を${label}にしました`, 'ok');
   await loadAll();
@@ -1201,7 +1201,7 @@ function replyTabHTML(r) {
             <option value="true"${c.is_child ? ' selected' : ''}>子ども</option></select></div></div>
         <div class="two">
           <div class="f"><label>生年月日</label><input type="date" class="cf-bd" value="${esc(c.birthdate || '')}"></div>
-          <div class="f"><label>年齢（9/26時点）</label><input class="cf-age" inputmode="numeric" value="${c.age ?? ''}"></div></div>
+          <div class="f"><label>年齢（9/26時点）</label><input class="cf-age" type="number" min="0" step="1" inputmode="numeric" value="${c.age ?? ''}"></div></div>
         <div class="two">
           <div class="f"><label>肩書き</label><select class="cf-title">
             <option value="">なし</option>
@@ -1270,7 +1270,6 @@ function wireGuestSave(g) {
       transport_note: $('#gf-feenote').value.trim() || null,
       gift_note: $('#gf-gift').value.trim() || null,
       line_joined: $('#gf-line').checked, wechat_joined: $('#gf-wc').checked,
-      updated_at: new Date().toISOString(),
     };
     if (!rec.family_name || !rec.given_name) { toast('姓と名は必須です', 'err'); return; }
     let gid = g?.id;
@@ -1306,7 +1305,7 @@ function compFormHTML(i) {
         <option value="false">大人</option><option value="true">お子様</option></select></div>
       <div class="f"><label>生年月日</label><input type="date" class="cf-bd"></div></div>
     <div class="two">
-      <div class="f"><label>年齢（9/26時点）</label><input class="cf-age" inputmode="numeric"></div>
+      <div class="f"><label>年齢（9/26時点）</label><input class="cf-age" type="number" min="0" step="1" inputmode="numeric"></div>
       <div class="f"><label>出欠</label><select class="cf-att">
         <option value="true">出席</option><option value="false">欠席</option></select></div></div>
     <div class="two">
@@ -1408,7 +1407,7 @@ function wireNewReply(g) {
         attending: $('.cf-att', box).value === 'true',
         is_child: $('.cf-child', box).value === 'true',
         birthdate: v('.cf-bd') || null,
-        age: v('.cf-age') === '' ? null : Number(v('.cf-age')),
+        age: v('.cf-age') === '' ? null : Math.round(Number(v('.cf-age'))),
         allergy: v('.cf-al') || null, dietary: v('.cf-di') || null,
         title: v('.cf-title') || null,
         kids_chair: $('.cf-child', box).value === 'true' && !!$('.cf-chair', box)?.checked,
@@ -1451,8 +1450,8 @@ function wireCompDelete(r) {
       if (!reason) { toast('理由は必須です', 'err'); return; }
       const before = { deleted_at: p.deleted_at ?? null, delete_reason: p.delete_reason ?? null };
       const patch = restore
-        ? { deleted_at: null, delete_reason: null, updated_at: new Date().toISOString() }
-        : { deleted_at: new Date().toISOString(), delete_reason: reason, updated_at: new Date().toISOString() };
+        ? { deleted_at: null, delete_reason: null }
+        : { deleted_at: new Date().toISOString(), delete_reason: reason };
       const { error } = await sb.from('reply_people').update(patch).eq('id', p.id);
       if (error) { toast('失敗：' + error.message, 'err'); return; }
       await logChange('reply_people', p.id, restore ? 'restore' : 'delete', reason,
@@ -1480,11 +1479,10 @@ function wireReplySave(r) {
       messenger: $('#rf-mid').value.trim() || null, country: $('#rf-country').value.trim() || null,
       region: $('#rf-region').value.trim() || null, needs: $('#rf-needs').value.trim() || null,
       message: $('#rf-msg').value.trim() || null, admin_note: $('#rf-note').value.trim() || null,
-      attending: $('#rf-att').value === 'true', updated_at: new Date().toISOString(),
+      attending: $('#rf-att').value === 'true',
     };
     const np = { attending: nr.attending, allergy: $('#rf-al').value.trim() || null,
-                 dietary: $('#rf-di').value.trim() || null, ...nm,
-                 updated_at: new Date().toISOString() };
+                 dietary: $('#rf-di').value.trim() || null, ...nm };
     const diff = { before: {}, after: {} };
     for (const k of Object.keys(nr)) if (k !== 'updated_at' && r[k] !== nr[k]) { diff.before[k] = r[k]; diff.after[k] = nr[k]; }
     if (me) for (const k of ['attending', 'allergy', 'dietary',
@@ -1503,10 +1501,9 @@ function wireReplySave(r) {
           family_name_latin: v('.cf-fl').toUpperCase() || null,
           given_name_latin: v('.cf-gl').toUpperCase() || null,
           attending: $('.cf-att', box).value === 'true', is_child: $('.cf-child', box).value === 'true',
-          birthdate: v('.cf-bd') || null, age: v('.cf-age') === '' ? null : Number(v('.cf-age')),
+          birthdate: v('.cf-bd') || null, age: v('.cf-age') === '' ? null : Math.round(Number(v('.cf-age'))),
           allergy: v('.cf-al') || null, dietary: v('.cf-di') || null,
           title: v('.cf-title') || null,
-          updated_at: new Date().toISOString(),
         };
         /* A2: お子様椅子・お子様メニューは子どものときだけ持たせる */
         cp.kids_chair = cp.is_child && !!$('.cf-chair', box)?.checked;
@@ -1539,7 +1536,8 @@ function wireTagCreate(input, btn, chips) {
   const add = async () => {
     const name = input.value.trim();
     if (!name) return;
-    let c = S.circles.find(x => norm(x.name) === norm(name));
+    let c = S.circles.find(x => norm(x.name) === norm(name));   /* f4: 同名（空白・大小文字を無視）は既存を使う */
+    if (c) toast(`既存のタグ「${c.name}」を使います`, 'ok');
     if (!c) {
       const { data, error } = await sb.from('circles').insert({ name }).select('id,name').single();
       if (error) { toast('タグの作成に失敗：' + error.message, 'err'); return; }
@@ -1628,7 +1626,7 @@ function openMatchModal(rid) {
     try {
       // a. 回答の紐付け先を差し替え
       const { error } = await sb.from('replies_admin')
-        .update({ matched_guest_id: gid, match_type: 'manual', updated_at: new Date().toISOString() }).eq('id', r.id);
+        .update({ matched_guest_id: gid, match_type: 'manual' }).eq('id', r.id);
       if (error) throw error;
       if (merging) {
         // b. 自動作成分の友人圏タグを引き継ぐ（重複は無視）
@@ -1641,8 +1639,7 @@ function openMatchModal(rid) {
         // c. 自動作成分を削除フラグ
         const dr = `手動紐付けにより統合 → ${fullName(target)}`;
         const { error: e3 } = await sb.from('guests')
-          .update({ deleted_at: new Date().toISOString(), delete_reason: dr,
-                    updated_at: new Date().toISOString() }).eq('id', oldGuest.id);
+          .update({ deleted_at: new Date().toISOString(), delete_reason: dr }).eq('id', oldGuest.id);
         if (e3) throw e3;
         await logChange('guests', oldGuest.id, 'delete', dr, null);
       }
@@ -1676,7 +1673,7 @@ function openMatchModal(rid) {
       }).select('id').single();
       if (error) throw error;
       const { error: e2 } = await sb.from('replies_admin')
-        .update({ matched_guest_id: g2.id, match_type: 'unlisted', updated_at: new Date().toISOString() })
+        .update({ matched_guest_id: g2.id, match_type: 'unlisted' })
         .eq('id', r.id);
       if (e2) throw e2;
       await logChange('replies_admin', r.id, 'match', reason,
@@ -1708,12 +1705,12 @@ function openUnmatch(rid) {
     try {
       if (restore) {
         const { error } = await sb.from('guests')
-          .update({ deleted_at: null, delete_reason: null, updated_at: new Date().toISOString() })
+          .update({ deleted_at: null, delete_reason: null })
           .eq('id', merged.id);
         if (error) throw error;
         await logChange('guests', merged.id, 'restore', reason, null);
         const { error: e2 } = await sb.from('replies_admin')
-          .update({ matched_guest_id: merged.id, match_type: 'unlisted', updated_at: new Date().toISOString() })
+          .update({ matched_guest_id: merged.id, match_type: 'unlisted' })
           .eq('id', r.id);
         if (e2) throw e2;
         await logChange('replies_admin', r.id, 'unmatch', reason,
@@ -1722,7 +1719,7 @@ function openUnmatch(rid) {
         toast(`自動登録の「${fullName(merged)}」に戻しました`, 'ok');
       } else {
         const { error } = await sb.from('replies_admin')
-          .update({ matched_guest_id: null, match_type: null, updated_at: new Date().toISOString() }).eq('id', r.id);
+          .update({ matched_guest_id: null, match_type: null }).eq('id', r.id);
         if (error) throw error;
         await logChange('replies_admin', r.id, 'unmatch', reason,
           { before: { matched_guest_id: r.matched_guest_id, match_type: r.match_type },
@@ -1768,7 +1765,7 @@ function openMergeModal(oldId) {
       // a. 回答の紐付けを新しい方へ
       for (const r of rs) {
         const { error } = await sb.from('replies_admin')
-          .update({ matched_guest_id: keeper.id, updated_at: new Date().toISOString() }).eq('id', r.id);
+          .update({ matched_guest_id: keeper.id }).eq('id', r.id);
         if (error) throw error;
         await logChange('replies_admin', r.id, 'match', `重複統合 → ${fullName(keeper)}`,
           { before: { matched_guest_id: oldId }, after: { matched_guest_id: keeper.id } });
@@ -1783,7 +1780,7 @@ function openMergeModal(oldId) {
       // c. 古い方を削除フラグ
       const dr = `重複統合 → ${fullName(keeper)}`;
       const { error: e3 } = await sb.from('guests')
-        .update({ deleted_at: new Date().toISOString(), delete_reason: dr, updated_at: new Date().toISOString() })
+        .update({ deleted_at: new Date().toISOString(), delete_reason: dr })
         .eq('id', oldId);
       if (e3) throw e3;
       // d. 履歴
@@ -1816,7 +1813,7 @@ function openActivateModal(rid) {
     if (!reason) { toast('理由は必須です', 'err'); return; }
     try {
       const { error } = await sb.from('replies_admin')
-        .update({ superseded_by: null, duplicate_reason: null, updated_at: new Date().toISOString() })
+        .update({ superseded_by: null, duplicate_reason: null })
         .eq('id', r.id);
       if (error) throw error;
       await logChange('replies_admin', r.id, 'edit', reason,
@@ -1824,7 +1821,7 @@ function openActivateModal(rid) {
           after: { superseded_by: null, duplicate_reason: null } });
       if (newer) {
         const { error: e2 } = await sb.from('replies_admin')
-          .update({ superseded_by: r.id, duplicate_reason: '手動で入替', updated_at: new Date().toISOString() })
+          .update({ superseded_by: r.id, duplicate_reason: '手動で入替' })
           .eq('id', newer.id);
         if (e2) throw e2;
         await logChange('replies_admin', newer.id, 'edit', reason,
@@ -1933,7 +1930,7 @@ $('#bulk-edit').addEventListener('click', () => {
               : (val || null);
             const ov = g[col] ?? null;
             const { error } = await sb.from('guests')
-              .update({ [col]: nv, updated_at: new Date().toISOString() }).eq('id', g.id);
+              .update({ [col]: nv }).eq('id', g.id);
             if (error) throw error;
             await logChange('guests', g.id, 'edit', reason || `一括編集：${f.label}`,
               { before: { [col]: ov }, after: { [col]: nv } });
@@ -1949,18 +1946,18 @@ $('#bulk-edit').addEventListener('click', () => {
             const ov = r.attending ?? null;
             const nPeople = peopleLive(r.id).length;
             const { error } = await sb.from('replies_admin')
-              .update({ attending: nv, updated_at: new Date().toISOString() }).eq('id', r.id);
+              .update({ attending: nv }).eq('id', r.id);
             if (error) throw error;
             // E4: 同行者の出欠も連動
             const { error: e2 } = await sb.from('reply_people')
-              .update({ attending: nv, updated_at: new Date().toISOString() }).eq('reply_id', r.id);
+              .update({ attending: nv }).eq('reply_id', r.id);
             if (e2) throw e2;
             await logChange('replies_admin', r.id, 'edit', reason,
               { before: { attending: ov }, after: { attending: nv }, people_updated: nPeople });
           } else if (f.v === 'needs') {
             const ov = r.needs ?? null;
             const { error } = await sb.from('replies_admin')
-              .update({ needs: val || null, updated_at: new Date().toISOString() }).eq('id', r.id);
+              .update({ needs: val || null }).eq('id', r.id);
             if (error) throw error;
             await logChange('replies_admin', r.id, 'edit', reason,
               { before: { needs: ov }, after: { needs: val || null } });
@@ -1968,7 +1965,7 @@ $('#bulk-edit').addEventListener('click', () => {
             if (!me) { skip++; continue; }
             const ov = me[f.v] ?? null;
             const { error } = await sb.from('reply_people')
-              .update({ [f.v]: val || null, updated_at: new Date().toISOString() }).eq('id', me.id);
+              .update({ [f.v]: val || null }).eq('id', me.id);
             if (error) throw error;
             await logChange('reply_people', me.id, 'edit', reason,
               { before: { [f.v]: ov }, after: { [f.v]: val || null } });
@@ -2133,10 +2130,12 @@ async function replaceAutoGuest(item) {
   let newId;
   if (item.target) {                       // 正式な招待者が既にいれば、そこへ畳み込む
     newId = item.target.id;
-    const patch = { updated_at: new Date().toISOString() };
+    const patch = {};
     for (const [k, v] of Object.entries(item.値)) if (v !== null && v !== '') patch[k] = v;
-    const { error } = await sb.from('guests').update(patch).eq('id', newId);
-    if (error) throw error;
+    if (Object.keys(patch).length) {
+      const { error } = await sb.from('guests').update(patch).eq('id', newId);
+      if (error) throw error;
+    }
   } else {
     const { data: ng, error: e1 } = await sb.from('guests').insert(item.値).select('id').single();
     if (e1) throw e1;
@@ -2146,7 +2145,7 @@ async function replaceAutoGuest(item) {
   const moved = S.replies.filter(r => r.matched_guest_id === old.id).map(r => r.id);
   if (moved.length) {
     const { error } = await sb.from('replies_admin')
-      .update({ matched_guest_id: newId, match_type: 'auto', updated_at: new Date().toISOString() })
+      .update({ matched_guest_id: newId, match_type: 'auto' })
       .eq('matched_guest_id', old.id);
     if (error) throw error;
     for (const rid of moved)
@@ -2165,7 +2164,6 @@ async function replaceAutoGuest(item) {
 
   const { error: e2 } = await sb.from('guests').update({
     deleted_at: new Date().toISOString(), delete_reason: 'CSVアップロードにより置換',
-    updated_at: new Date().toISOString(),
   }).eq('id', old.id);
   if (e2) throw e2;
 
@@ -2212,10 +2210,12 @@ function showCSVPreview(items) {
         added = ins.length;
       }
       for (const i of items.filter(x => x.kind === 'upd')) {
-        const patch = { updated_at: new Date().toISOString() };
+        const patch = {};
         for (const [k, v] of Object.entries(i.値)) if (v !== null && v !== '') patch[k] = v;
-        const { error } = await sb.from('guests').update(patch).eq('id', i.target.id);
-        if (error) throw error;
+        if (Object.keys(patch).length) {
+          const { error } = await sb.from('guests').update(patch).eq('id', i.target.id);
+          if (error) throw error;
+        }
         updated++;
       }
       for (const i of items.filter(x => x.kind === 'rep')) { await replaceAutoGuest(i); replaced++; }
@@ -2584,6 +2584,8 @@ function renderCircles() {
 $('#c-add').addEventListener('click', async () => {
   const name = $('#c-new').value.trim();
   if (!name) return;
+  const dup = S.circles.find(x => norm(x.name) === norm(name));
+  if (dup) { toast(`同じ名前のタグ「${dup.name}」があります`, 'err'); return; }
   const { error } = await sb.from('circles').insert({ name });
   if (error) { toast('追加に失敗：' + error.message, 'err'); return; }
   $('#c-new').value = ''; toast('追加しました', 'ok'); await loadAll();
@@ -2838,7 +2840,7 @@ async function saveSettings(patch) {
   renderBudget();
   saveSoon('set', async () => {
     const { error } = await sb.from('budget_settings')
-      .update({ ...patch, updated_at: new Date().toISOString() }).eq('id', 1);
+      .update({ ...patch }).eq('id', 1);
     if (error) toast('前提の保存に失敗：' + error.message, 'err');
   });
 }
@@ -2847,7 +2849,7 @@ async function saveItem(id, patch) {
   renderBudget();
   saveSoon('i' + id, async () => {
     const { error } = await sb.from('budget_items')
-      .update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id);
+      .update({ ...patch }).eq('id', id);
     if (error) toast('項目の保存に失敗：' + error.message, 'err');
   });
 }
@@ -3169,9 +3171,9 @@ function openItemModal(id) {
         <input id="if-unit" type="number" step="0.01" value="${it?.unit_price ?? ''}"></div></div>
     <div class="two">
       <div class="f"><label>基準数（超過分のみ課金）</label>
-        <input id="if-base" type="number" min="0" value="${it?.base_qty ?? ''}" placeholder="例：30"></div>
+        <input id="if-base" type="number" min="0" step="1" value="${it?.base_qty ?? ''}" placeholder="例：30"></div>
       <div class="f"><label>数量（固定費・その他のとき）</label>
-        <input id="if-qty" type="number" min="0" value="${it?.qty ?? ''}" placeholder="例：16"></div></div>
+        <input id="if-qty" type="number" min="0" step="1" value="${it?.qty ?? ''}" placeholder="例：16"></div></div>
     <div class="two">
       <div class="f"><label>プラン内控除額（円）</label>
         <input id="if-allow" type="number" min="0" value="${it?.allowance ?? 0}"></div>
@@ -3189,13 +3191,13 @@ function openItemModal(id) {
   wireClose(box);
   $('#if-save').addEventListener('click', async () => {
     const num = sel => $(sel).value.trim() === '' ? null : Number($(sel).value);
+    const int = sel => { const v = num(sel); return v == null ? null : Math.round(v); };   /* integer 列 */
     const rec = {
       category: $('#if-cat').value.trim(), name: $('#if-name').value.trim(),
       kind: $('#if-kind').value, unit_price: num('#if-unit'),
-      base_qty: num('#if-base') ?? 0, qty: num('#if-qty'),
+      base_qty: int('#if-base') ?? 0, qty: int('#if-qty'),
       allowance: num('#if-allow') ?? 0, tax_label: $('#if-tax').value,
       paid: $('#if-paid').value === '1', note: $('#if-note').value.trim() || null,
-      updated_at: new Date().toISOString(),
     };
     if (!rec.category || !rec.name) { toast('カテゴリと項目名は必須です', 'err'); return; }
     const q = it ? sb.from('budget_items').update(rec).eq('id', it.id)
@@ -3249,12 +3251,11 @@ function openKindModal(id) {
     $('#kf-kind').addEventListener('change', draw); draw();
     $('#kf-save').addEventListener('click', async () => {
       const k = $('#kf-kind').value;
-      const rec = { kind: k, split: null, manual_qty: null, base_qty: 0, qty: null,
-                    updated_at: new Date().toISOString() };
-      if (k === 'fix' || k === 'man') rec.qty = Math.max(0, Number($('#kf-qty').value) || 0);
-      else if (k === 'pp') rec.base_qty = Math.max(0, Number($('#kf-base').value) || 0);
+      const rec = { kind: k, split: null, manual_qty: null, base_qty: 0, qty: null };
+      if (k === 'fix' || k === 'man') rec.qty = Math.round(Math.max(0, Number($('#kf-qty').value) || 0));
+      else if (k === 'pp') rec.base_qty = Math.round(Math.max(0, Number($('#kf-base').value) || 0));
       else if (k === 'pt') rec.split = $('#kf-split').value || null;
-      else if (k === 'kid') rec.qty = $('#kf-kqty').value.trim() === '' ? null : Math.max(0, Number($('#kf-kqty').value));
+      else if (k === 'kid') rec.qty = $('#kf-kqty').value.trim() === '' ? null : Math.round(Math.max(0, Number($('#kf-kqty').value)));
       const { error } = await sb.from('budget_items').update(rec).eq('id', it.id);
       if (error) { toast('保存に失敗：' + error.message, 'err'); return; }
       toast('区分を変更しました', 'ok'); closeModal('m-item'); await loadBudget();
@@ -3277,7 +3278,7 @@ function openExtModal(id) {
       <div class="f"><label>支払い先</label><input id="xf-vendor" value="${esc(e?.vendor || '')}"></div>
       <div class="f"><label>単価（税込）</label><input id="xf-unit" type="number" min="0" value="${e?.unit_price ?? 0}"></div></div>
     <div class="two">
-      <div class="f"><label>数量</label><input id="xf-qty" type="number" min="0" value="${e?.qty ?? 0}"></div>
+      <div class="f"><label>数量</label><input id="xf-qty" type="number" min="0" step="1" value="${e?.qty ?? 0}"></div>
       <div class="f"><label>受取予定日（任意）</label><input id="xf-date" type="date" value="${esc(e?.receive_date || '')}"></div></div>
     <div class="two">
       <div class="f"><label>支払い状況</label><select id="xf-pay">${
@@ -3300,10 +3301,10 @@ function openExtModal(id) {
     const rec = {
       category: $('#xf-cat').value.trim(), name: $('#xf-name').value.trim(),
       vendor: $('#xf-vendor').value.trim() || null,
-      unit_price: Number($('#xf-unit').value) || 0, qty: Number($('#xf-qty').value) || 0,
+      unit_price: Number($('#xf-unit').value) || 0, qty: Math.round(Number($('#xf-qty').value) || 0),
       pay_status: $('#xf-pay').value, storage_status: $('#xf-store').value,
       receive_date: $('#xf-date').value || null, gift_type: $('#xf-gift').value || null,
-      note: $('#xf-note').value.trim() || null, updated_at: new Date().toISOString(),
+      note: $('#xf-note').value.trim() || null,
     };
     if (!rec.category || !rec.name) { toast('カテゴリと品目は必須です', 'err'); return; }
     const { error } = e ? await sb.from('budget_external').update(rec).eq('id', e.id)
@@ -3388,7 +3389,7 @@ const setPaid = async v => {
   B.sel.clear();
   renderBudget();
   const { error } = await sb.from('budget_items')
-    .update({ paid: v, updated_at: new Date().toISOString() }).in('id', ids);
+    .update({ paid: v }).in('id', ids);
   if (error) toast('更新に失敗：' + error.message, 'err');
   else toast(`${ids.length} 件を${v ? '支払済' : '未払'}にしました`, 'ok');
 };
@@ -4635,7 +4636,9 @@ async function fetchSince() {
   };
   const [tables, asg] = await Promise.all([last('seating_tables'), last('seating_assignments')]);
   const { data } = await sb.from('event_settings').select('updated_at').eq('id', 1).maybeSingle();
-  return { tables, asg, ev: data?.updated_at || null };
+  /* 削除は updated_at を動かさないので、割当の行数も見る */
+  const { count } = await sb.from('seating_assignments').select('id', { count: 'exact', head: true });
+  return { tables, asg, ev: data?.updated_at || null, asgCount: count ?? null };
 }
 const newer = (db, mine) => !!db && (!mine || new Date(db) > new Date(mine));
 
@@ -4705,6 +4708,7 @@ async function saveEdits() {
   T.saving = true; renderEditBar();
   const payload = {
     p_since_tables: T.since?.tables, p_since_asg: T.since?.asg, p_since_ev: T.since?.ev,
+    p_since_asg_count: T.since?.asgCount,
     p_del_tables: d.delTables, p_tables: d.upTables.map(tableRow), p_moved_tables: d.movedTables,
     p_del_asg: d.delAsg, p_asg: d.upAsg.map(asgRow), p_moved_asg: d.movedAsg,
     p_ev: Object.keys(d.ev).length ? d.ev : null,
@@ -4726,7 +4730,8 @@ async function saveEdits() {
 /* RPC が無いときの順次実行。一意制約に当たらないよう、動かす行の位置をいったん外してから upsert する */
 async function seqSave(d) {
   const since = await fetchSince();
-  if (newer(since.tables, T.since?.tables) || newer(since.asg, T.since?.asg) || newer(since.ev, T.since?.ev))
+  if (newer(since.tables, T.since?.tables) || newer(since.asg, T.since?.asg) || newer(since.ev, T.since?.ev)
+      || (T.since?.asgCount != null && since.asgCount != null && since.asgCount !== T.since.asgCount))
     return { message: 'seating_conflict' };
   const steps = [];
   if (d.delAsg.length) steps.push(() => sb.from('seating_assignments').delete().in('id', d.delAsg));
@@ -4736,7 +4741,7 @@ async function seqSave(d) {
   if (d.movedAsg.length) steps.push(() => sb.from('seating_assignments').update({ seat_index: null }).in('id', d.movedAsg));
   if (d.upAsg.length) steps.push(() => sb.from('seating_assignments').upsert(d.upAsg.map(asgRow), { onConflict: 'id' }));
   if (Object.keys(d.ev).length) steps.push(() => sb.from('event_settings')
-    .upsert({ id: 1, ...d.ev, updated_at: new Date().toISOString() }, { onConflict: 'id' }));
+    .upsert({ id: 1, ...d.ev }, { onConflict: 'id' }));
   for (const run of steps) { const { error } = await run(); if (error) return error; }
   return null;
 }
@@ -5786,7 +5791,7 @@ async function loadEventSettings() {
 /* 基本情報モーダルからの保存（配席の編集モードとは別に、即時に書く） */
 async function saveEventSettings(patch) {
   const { data, error } = await sb.from('event_settings')
-    .upsert({ id: 1, ...patch, updated_at: new Date().toISOString() }, { onConflict: 'id' }).select().maybeSingle();
+    .upsert({ id: 1, ...patch }, { onConflict: 'id' }).select().maybeSingle();
   if (error) { toast('基本情報の保存に失敗：' + error.message, 'err'); return false; }
   S.ev = { ...(S.ev || EV_DEF), ...patch, ...(data || {}) };
   if (T.base) T.base.ev = { ...T.base.ev, ...patch, ...(data || {}) };   /* 編集中でも差分に数えない */
