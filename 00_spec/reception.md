@@ -1,7 +1,7 @@
 # 受付機能（/reception）仕様 — wedding-admin
 
 ## 概要
-管理画面（admin.forest-mm.com、Cloudflare Workers + Static Assets）に当日受付用の `/reception/` を追加する。
+管理画面（wedding-admin.forest-mm.com、Cloudflare Workers + Static Assets）に当日受付用の `/reception/` を追加する。
 `/reception/` 配下は「管理者ログイン（既存の Supabase Auth + ADMIN_EMAILS）」または「受付トークン」のどちらでもアクセスできる。
 受付トークンでアクセスした端末が他の管理ページを開いた場合は「権限不足」画面を表示する。
 
@@ -23,7 +23,7 @@
 | 管理画面（トークン発行・ゲスト一覧・ダッシュボード・権限不足画面） | `public/app.js`、`public/index.html`、`public/style.css` |
 
 ## 1. 短縮URLとトークン
-- 形式：`https://admin.forest-mm.com/r/<code>`
+- 形式：`https://wedding-admin.forest-mm.com/r/<code>`
 - code は 8 文字。紛らわしい文字（0 O 1 l I）を除いた英数字から `crypto.getRandomValues` で生成し、管理画面の「受付トークン」タブで発行する（reception_tokens に insert）
 - `GET /r/:code`
   1. reception_tokens を code で検索し、`is_active = true` かつ（`expires_at` が null または未来）であることを確認
