@@ -537,3 +537,11 @@ table.bkprev td.who{white-space:normal;line-height:1.9}
 
 /* ===== B5. 不足席数 ===== */
 #sv-min.short{color:var(--enji)}
+
+/* ---- 基本情報・申し送り（2026-09-24） ---- */
+.h2row{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.h2row h2{margin:0}
+.notepanel{padding:10px 14px;margin-bottom:12px}
+.notepanel textarea{width:100%;border:1px solid var(--line);padding:8px 10px;font-family:inherit;
+  font-size:12.5px;line-height:1.6;resize:vertical;min-height:52px}
+#m-ev-box input{font-size:14px}

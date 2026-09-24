@@ -36,7 +36,8 @@
 
 <!-- ===== DASHBOARD ===== -->
 <section class="view on" id="v-dash">
-  <h2>ダッシュボード</h2>
+  <div class="h2row"><h2>ダッシュボード</h2><span class="sp"></span>
+    <button class="btn o s" id="ev-open" title="新郎新婦の名前（漢字・ローマ字）">⚙ 基本情報</button></div>
   <p class="sub" id="d-sub"></p>
   <div class="alert" id="d-dup" hidden></div>
   <div class="cards" id="d-cards"></div>
@@ -156,7 +157,7 @@
 <!-- ===== SEATING ===== -->
 <section class="view" id="v-seating">
   <h2>配席</h2>
-  <p class="sub">卓数を選ぶと会場レイアウトを自動生成します（最大3行×4列・高砂は最前面中央）。右の未配席リストから卓へドラッグして配席します。タッチ端末では、人をタップして選び、卓をタップしても配席できます。</p>
+  <p class="sub">卓数を選ぶと会場レイアウトを自動生成します（最大3行×4列・高砂は最前面中央）。右の未配席リストから卓へドラッグして配席します。タッチ端末では、人をタップして選び、卓をタップしても配席できます。「レイアウトを固定」をオフにすると卓そのものをドラッグで動かせます（動かした卓は卓数を変えても位置を保ちます）。</p>
 
   <div class="panel seatbar">
     <div class="row" style="margin:0">
@@ -174,6 +175,8 @@
       <button class="btn s" id="sv-bulk">一括配席</button>
       <button class="btn s" id="sv-swap" title="卓を2つ選んで、配席をまるごと入れ替えます">卓を入れ替え</button>
       <label class="lockbox" title="誤操作防止。オフにすると卓そのものをドラッグして動かせます"><input type="checkbox" id="sv-lock" checked> レイアウトを固定</label>
+      <label class="lockbox" title="卓を 2.5% 刻みの格子に合わせて置きます"><input type="checkbox" id="sv-snap" checked> グリッドにスナップ</label>
+      <button class="btn o s" id="sv-reset" title="全卓を卓数ルールの位置に置き直します">自動配置に戻す</button>
       <button class="btn o s" id="sv-dl">座席表ダウンロード</button>
       <button class="btn o s" id="sv-gdl">ゲスト向け座席表</button>
       <button class="btn o s" id="sv-csv">配席CSV</button>
@@ -186,6 +189,13 @@
     </div>
   </div>
 
+  <div class="panel notepanel">
+    <div class="row" style="margin:0 0 6px"><b>全体の申し送り</b>
+      <span class="note">会場・進行への申し送り。管理用座席表の左下に印字されます（自動保存）。卓ごとの申し送りは各卓のメモ（📝）に。</span>
+      <span class="sp"></span><span class="note" id="sv-notesaved"></span></div>
+    <textarea id="sv-note" rows="2" placeholder="例：車椅子のゲストが2名。B卓とD卓の間の導線を空けてください"></textarea>
+  </div>
+
   <div class="seatwrap" id="sv-wrap">
     <div class="panel canvaspanel">
       <div class="canvashead">
@@ -195,7 +205,7 @@
         <button class="btn s o" id="sv-add" title="卓数を1つ増やします">＋ 卓を追加</button>
       </div>
       <div class="canvasbox" id="sv-box"></div>
-      <p class="note" style="margin:8px 0 0">卓をダブルクリック（タッチは長押し）で卓名・定員・形・メモ・卓の入れ替えを編集。📝はメモ付きの卓で、ホバーすると内容が出ます。席にカーソルを合わせると名前の左に出る「×」で未配席に戻します。空席をクリックすると、未配席の人を選んでその席に配席できます。</p>
+      <p class="note" style="margin:8px 0 0">卓をダブルクリック（タッチは長押し）で卓名・定員・形・メモ（卓の申し送り）・卓の入れ替えを編集。📝はメモ付きの卓で、ホバーすると内容が出ます。「レイアウトを固定」をオフにして卓をドラッグすると位置を変えられます（他の卓・高砂・出入口と重なる位置は臙脂の枠で警告し、その位置には置けません）。席にカーソルを合わせると名前の左に出る「×」で未配席に戻します。空席をクリックすると、未配席の人を選んでその席に配席できます。</p>
     </div>
 
     <aside class="panel sidepanel" id="sv-side">
@@ -327,6 +337,7 @@
 <div class="modal" id="m-item"><div class="mbox" id="m-item-box"></div></div>
 <div class="modal" id="m-table"><div class="mbox" id="m-table-box"></div></div>
 <div class="modal" id="m-seatask"><div class="mbox" id="m-seatask-box"></div></div>
+<div class="modal" id="m-ev"><div class="mbox" id="m-ev-box"></div></div>
 
 <!-- B4: 空席をクリックしたときの配席ポップオーバー -->
 <div class="seatpop off" id="sv-pop"></div>

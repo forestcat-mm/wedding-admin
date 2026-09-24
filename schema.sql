@@ -310,3 +310,23 @@ alter table reply_people
 -- 配席：卓ごとの席番号は一意（卓の入れ替え・定員変更はこの前提で書かれている）
 create unique index if not exists seating_assignments_seat_uniq
   on seating_assignments (table_id, seat_index) where seat_index is not null;
+
+-- ========== 基本情報・卓の位置固定（2026-09-24 追加） ==========
+-- 新郎新婦の名前と「全体の申し送り」。1行だけ（id=1）。ダッシュボードの「⚙ 基本情報」と配席タブで編集
+create table if not exists event_settings (
+  id int primary key default 1 check (id = 1),
+  groom_name text,                 -- 新郎（漢字）
+  bride_name text,                 -- 新婦（漢字）
+  groom_name_latin text,           -- 新郎（ローマ字）
+  bride_name_latin text,           -- 新婦（ローマ字）
+  seating_note text,               -- 配席の全体申し送り（管理用座席表の左下に印字）
+  updated_at timestamptz default now()
+);
+insert into event_settings (id) values (1) on conflict (id) do nothing;
+alter table event_settings enable row level security;
+drop policy if exists "admin all" on event_settings;
+create policy "admin all" on event_settings for all to authenticated using (true) with check (true);
+
+-- 卓の位置を手で動かしたら true。卓数を変えても動かさず、「自動配置に戻す」で false に戻る
+alter table seating_tables
+  add column if not exists pos_locked boolean not null default false;

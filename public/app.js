@@ -330,6 +330,7 @@ async function loadAll() {
   if (bad) { toast('読み込みに失敗しました：' + bad.error.message, 'err'); return; }
   [S.guests, S.circles, S.guestCircles, S.replies, S.people, S.shares] = res.map(r => r.data || []);
   await loadTitles();
+  await loadEventSettings();       // 基本情報（新郎新婦の名前・全体の申し送り）
   index();
   await loadBudgetData();          // ダッシュボードの予算カードが初回から出るよう先に読む
   fillCircleSelects();
@@ -3485,9 +3486,12 @@ async function loadSeating() {
   T.pool = buildPool();                       // ensureTables の min 算出に必要
   await ensureTables();
   T.lock = localStorage.getItem('seatLock') !== '0';
+  T.snap = localStorage.getItem('seatSnap') !== '0';
   T.folded = localStorage.getItem('seatFold') === '1';
   T.view = localStorage.getItem('seatView') === 'list' ? 'list' : 'round';
   $('#sv-lock').checked = T.lock;
+  $('#sv-snap').checked = T.snap;
+  $('#sv-note').value = S.ev?.seating_note || '';       /* C1: 全体の申し送り */
   T.loaded = true;
   await reconcileSeating();
   indexSeating();
@@ -3760,10 +3764,6 @@ const pGift = c => `<rect x="1.7" y="5.3" width="10.6" height="7" rx="1.3" ${mkS
   + `<path d="M1.7 8.2h10.6" ${mkStroke(c)}/>`
   + `<path d="M7 5.3C5.6 3.4 4.2 1.9 3.3 2.5c-.9.7-.1 2.2 3.7 2.8Z" ${mkStroke(c)}/>`
   + `<path d="M7 5.3c1.4-1.9 2.8-3.4 3.7-2.8.9.7.1 2.2-3.7 2.8Z" ${mkStroke(c)}/>`;
-/* キッズ：丸い頭と丸い胴体（頭を大きめに）。腕を短く出して人型に見せる */
-const pKid = c => `<circle cx="7" cy="3.4" r="2.4" ${mkStroke(c)}/>`
-  + `<circle cx="7" cy="10.1" r="3" ${mkStroke(c)}/>`
-  + `<path d="M4.1 9.1 1.5 8.2M9.9 9.1l2.6-.9" ${mkStroke(c)}/>`;
 /* お子様椅子：背もたれが高く脚が長い椅子を横から見た形 */
 const pChair = c => `<path d="M3.9 1.8v6.9" ${mkStroke(c)}/><path d="M3.9 8.7h5.3" ${mkStroke(c)}/>`
   + `<path d="M4.2 8.7v3.6M8.9 8.7v3.6" ${mkStroke(c)}/><path d="M4.2 11h4.7" ${mkStroke(c)}/>`;
@@ -3777,20 +3777,17 @@ const MARK_DEF = {
   warn:  { tip: '配慮事項あり',         d: () => pWarn(MK_ENJI) },
   fork:  { tip: 'アレルギー・食事制限あり', d: () => pFork(MK_ENJI) },
   gift:  { tip: '個別ギフト',           d: () => pGift(MK_KIN) },
-  kid:   { tip: 'お子様',               d: () => pKid(MK_SUMI) },
   chair: { tip: 'お子様椅子',           d: () => pChair(MK_SUMI) },
 };
-/* C3: 表示順＝注意 → ナイフフォーク → ギフト → キッズ → お子様メニュー → お子様椅子 */
+/* C3: 表示順＝注意 → ナイフフォーク → ギフト → お子様メニュー → お子様椅子
+   （お子様の人型マークは廃止。お子様はメニューのマークで分かる） */
 function markList(p) {
   if (!p) return [];
   const out = [];
   if (p.needs) out.push({ k: 'warn' });
   if (p.allergy || p.dietary) out.push({ k: 'fork' });
   if (p.gift) out.push({ k: 'gift' });
-  if (p.isChild) {
-    out.push({ k: 'kid' });
-    if (p.meal) out.push({ k: 'meal', ch: p.meal });
-  }
+  if (p.isChild && p.meal) out.push({ k: 'meal', ch: p.meal });
   if (p.chair) out.push({ k: 'chair' });
   return out;
 }
@@ -3807,9 +3804,10 @@ function marksSVG(list, x, y, size) {
   }).join('');
 }
 /* C3: 右下の凡例 */
+const LEGEND_W = 214, LEGEND_H = 5 * 19 + 24;
 function legendSVG(x, y) {
   const rows = [['warn', '配慮事項あり'], ['fork', 'アレルギー・食事制限あり'], ['gift', '個別ギフト'],
-                ['kid', 'お子様'], ['meal', 'お子様メニュー（A／B／C）'], ['chair', 'お子様椅子']];
+                ['meal', 'お子様メニュー（A／B／C）'], ['chair', 'お子様椅子']];
   const rowH = 19, w = 214, h = rows.length * rowH + 24;
   let s = `<g class="legend" transform="translate(${x - w},${y - h})">`
     + `<rect x="0" y="0" width="${w}" height="${h}" rx="4" fill="#fff" stroke="#D9CFC4" stroke-width="1"/>`
@@ -3823,7 +3821,7 @@ function legendSVG(x, y) {
 }
 
 /* 書き出しの設定。canvasSVG がこの値を見て名前枠の中身を変える */
-const EX = { titles: false, guest: false };
+const EX = { titles: false, guest: false, notesMax: Infinity, rest: [], h: VB.h };
 let EXPORTING = false;
 
 /* ---------------- SVG ---------------- */
@@ -3834,6 +3832,7 @@ text{font-family:-apple-system,"Hiragino Sans","Yu Gothic",Helvetica,Arial,sans-
 .door{stroke:#FBF9F5;stroke-width:5}
 .doorl{stroke:#C9C1B7;stroke-width:1.4;stroke-dasharray:4 3;fill:none}
 .fx{font-size:13px;fill:#9C9288;letter-spacing:.18em;text-anchor:middle}
+.fxv{writing-mode:vertical-rl;text-orientation:upright}
 .tbody{fill:#fff;stroke:#C9C1B7;stroke-width:1.6}
 .tb.head .tbody{fill:#F4EFE7;stroke:#8C6E5E}
 .tb.over .tbody{stroke:#8E1728;stroke-width:2.6}
@@ -3889,6 +3888,18 @@ text{font-family:-apple-system,"Hiragino Sans","Yu Gothic",Helvetica,Arial,sans-
 .chip.prov .lrow{fill:#FBF9F5;fill-opacity:1;stroke:#C9C1B7;stroke-width:1;stroke-dasharray:3 2}
 .seat.drop .lrule{stroke:#2B2B2B;stroke-width:2}
 .seat.drop .lrow{fill:#F6F1E9;fill-opacity:1;stroke:#2B2B2B;stroke-width:1.4}
+.tb.clash .tbody{stroke:#8E1728;stroke-width:3.2;fill:#FBEFEF}
+.doorg.clash .doorl{stroke:#8E1728;stroke-dasharray:none;stroke-width:2.4}
+.doorg.clash .fx{fill:#8E1728}
+.tname{font-size:11px;fill:#6F665E}
+.tname b{font-weight:600}
+.nttl{font-size:13px;fill:#2B2B2B;letter-spacing:.1em;font-weight:600}
+.nh{font-size:12px;fill:#2B2B2B;font-weight:600}
+.nt{font-size:11px;fill:#2B2B2B}
+.nt.dim{fill:#9C9288}
+.ntag{font-size:8.5px;fill:#6F665E;letter-spacing:.04em}
+.ntagbox{fill:#F1ECE4;stroke:none}
+.nrule{stroke:#D9CFC4;stroke-width:1}
 `;
 const SEAT_CSS_UI = `
 #sv-canvas .chip,#sv-canvas .tb,#sv-canvas .seat{cursor:pointer;touch-action:none}
@@ -3897,34 +3908,163 @@ const SEAT_CSS_UI = `
 #sv-canvas .tb.drag{opacity:.75}
 `;
 
-/* D3: ゲスト向け座席表の見出し */
-const GUEST_HEAD = ['2026年9月26日', '森 喬由樹・吉永 百慧', 'リーガロイヤルホテル東京 ロイヤルホール'];
+/* D3: ゲスト向け座席表の見出し。新郎新婦の名前は event_settings（A3） */
+const HEAD_DATE = '2026年9月26日', HEAD_VENUE = 'リーガロイヤルホテル東京 ロイヤルホール';
+function guestHead() {
+  const { g, b } = coupleNames();
+  return [HEAD_DATE, [g, b].filter(Boolean).join('・'), HEAD_VENUE].filter(Boolean);
+}
+
+/* B1: 出入口は右の壁の下寄り（中心 y と開口の半分の長さ、VB 座標） */
+const DOOR_H = 52, DOOR_Y = VB.h - VB.pad - 62;
+const doorRect = () => ({ x1: VB.w - VB.pad - 28, y1: DOOR_Y - DOOR_H - 12, x2: VB.w, y2: DOOR_Y + DOOR_H + 12 });
 
 function canvasSVG(forExport) {
   EXPORTING = !!forExport;
   const P = VB.pad, W = VB.w, H = VB.h;
   const top = EX.guest ? 46 : 0;                 /* D3: 見出しのぶん会場図を下げる */
   let body = `<rect class="hall" x="${P}" y="${P + top}" width="${W - P * 2}" height="${H - P * 2 - top}" rx="6"/>`;
-  /* 入口：PDF に位置の記載がないため、高砂の反対側（下辺中央）に置いた目安 */
-  const dw = 52;
-  body += `<line class="door" x1="${W / 2 - dw}" y1="${H - P}" x2="${W / 2 + dw}" y2="${H - P}"/>`
-       +  `<path class="doorl" d="M${W / 2 - dw} ${H - P} h${dw * 2}"/>`
-       +  `<path class="doorl" d="M${W / 2 + dw} ${H - P} a${dw * 2.2} ${dw * 2.2} 0 0 1 ${-dw * 2} -7"/>`
-       +  `<text class="fx" x="${W / 2}" y="${H - P - 16}">入口</text>`;
+  /* B1: 出入口は会場図の右側面・下寄り。右の壁を切り、扉の弧と「出入口」を添える */
+  const dh = DOOR_H, dx = W - P, dy = DOOR_Y;
+  body += `<g class="doorg">`
+       +  `<line class="door" x1="${dx}" y1="${dy - dh}" x2="${dx}" y2="${dy + dh}"/>`
+       +  `<path class="doorl" d="M${dx} ${dy - dh} v${dh * 2}"/>`
+       +  `<path class="doorl" d="M${dx} ${dy + dh} a${dh * 2.2} ${dh * 2.2} 0 0 1 -7 ${-dh * 2}"/>`
+       +  `<text class="fx fxv" x="${dx + 12}" y="${dy}">出入口</text></g>`;
   if (EX.guest) {
-    body += `<text class="ghead" x="${W / 2}" y="${P + 24}">${esc(GUEST_HEAD.join('　／　'))}</text>`;
+    body += `<text class="ghead" x="${W / 2}" y="${P + 24}">${esc(guestHead().join('　／　'))}</text>`;
   }
   const inner = T.tables.map(tableSVG).join('');
   body += top ? `<g transform="translate(0,${top})">${inner}</g>` : inner;
-  /* C3: 管理用は凡例を右下に印字する */
-  if (forExport && !EX.guest) body += legendSVG(W - P - 10, H - P - 10);
+  /* C3: 管理用は会場図の下に「申し送り事項」（左）と凡例（右）の帯を足す。
+     帯の高さは内容で決め、EX.notesMax を超えるぶんは EX.rest に残す（PDF の2ページ目） */
+  let H2 = H;
+  EX.rest = [];
+  if (forExport && !EX.guest) {
+    const bandY = H - P + 14;
+    const band = notesBandSVG(bandY);
+    body += band.svg;
+    H2 = bandY + band.h + P;
+    EX.rest = band.rest;
+  }
+  EX.h = H2;
   const styles = SEAT_CSS + (forExport ? '' : SEAT_CSS_UI.replace(/#sv-canvas /g, ''));
-  const out = `<svg id="sv-canvas" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}"`
-    + (forExport ? ` width="${W}" height="${H}"` : '')
+  const out = `<svg id="sv-canvas" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H2}"`
+    + (forExport ? ` width="${W}" height="${H2}"` : '')
     + ` preserveAspectRatio="xMidYMid meet"><style>${styles}</style>`
-    + `<rect x="0" y="0" width="${W}" height="${H}" fill="#fff"/>${body}</svg>`;
+    + `<rect x="0" y="0" width="${W}" height="${H2}" fill="#fff"/>${body}</svg>`;
   EXPORTING = false;
   return out;
+}
+
+/* ---------------- C3: 申し送り事項（管理用座席表の左下） ---------------- */
+const NOTE_FS = 11, NOTE_LH = 16, NOTE_TAG_W = 60, NOTE_COL_GAP = 28;
+const NOTES_ONE_COL_MAX = 220;     /* 1列でこの高さを超えたら2列にする */
+const NOTES_BAND_MAX = 330;        /* PDF：帯がこれを超えるぶんは2ページ目へ */
+/* 卓名 → 「A卓」。すでに「卓」で終わる名前と高砂はそのまま */
+const tblName = t => t.shape === 'head' || /卓$/.test(t.label || '') ? (t.label || '') : `${t.label}卓`;
+const byLabel = (a, b) => (a.shape === 'head') - (b.shape === 'head')
+  || String(a.label ?? '').localeCompare(String(b.label ?? ''), 'ja', { numeric: true });
+/* 印字する行（見出し／本文）。①全体 ②卓ごと ③配慮事項一覧 */
+function noteRows() {
+  const rows = [];
+  const none = () => rows.push({ text: '（なし）', dim: true });
+  rows.push({ h: '① 全体の申し送り' });
+  const note = (S.ev?.seating_note || '').trim();
+  if (note) note.split(/\r?\n/).forEach(l => rows.push({ text: l.trim() || '　' }));
+  else none();
+  const tables = T.tables.slice().sort(byLabel);
+  rows.push({ h: '② 卓ごとの申し送り' });
+  const memos = tables.filter(t => (t.memo || '').trim());
+  if (memos.length) for (const t of memos)
+    rows.push({ text: `${tblName(t)}：${t.memo.trim().replace(/\s*\r?\n\s*/g, '／')}` });
+  else none();
+  rows.push({ h: '③ 配慮事項一覧' });
+  let n = 0;
+  for (const t of tables) {
+    const { seats, extra } = seatSlots(t);
+    [...seats, ...extra].forEach((a, i) => {
+      if (!a) return;
+      const p = T.pool.get(pkey(a.person_type, a.person_id));
+      if (!p) return;
+      const who = `${tblName(t)} 席${i + 1} ${[p.fam, p.giv].filter(Boolean).join(' ') || latinOf(p)} 様`;
+      const items = [];
+      if (p.needs) items.push(['配慮', p.needs]);
+      if (p.chair) items.push(['お子様椅子', 'お子様椅子']);
+      if (p.allergy) items.push(['アレルギー', p.allergy]);
+      if (p.dietary) items.push(['食事制限', p.dietary]);
+      for (const [tag, txt] of items) { rows.push({ tag, text: `${who}：${txt}` }); n++; }
+    });
+  }
+  if (!n) none();
+  return rows;
+}
+/* 文字幅の目安（全角＝fs、半角＝0.56fs） */
+const textW = (s, fs) => [...String(s ?? '')].reduce((w, c) => w + (c.charCodeAt(0) > 0xff ? fs : fs * 0.56), 0);
+function wrapText(s, maxW, fs) {
+  const out = []; let cur = '';
+  for (const c of [...String(s ?? '')]) {
+    if (cur && textW(cur + c, fs) > maxW) { out.push(cur); cur = c; } else cur += c;
+  }
+  out.push(cur);
+  return out;
+}
+/* rows → 1行ずつの描画単位（折り返し済み） */
+function noteLines(rows, colW) {
+  const lines = [];
+  for (const r of rows) {
+    if (r.h) { lines.push({ h: r.h, gap: lines.length ? 8 : 0 }); continue; }
+    const ind = r.tag ? NOTE_TAG_W : 0;
+    wrapText(r.text, colW - ind, NOTE_FS).forEach((t, i) =>
+      lines.push({ text: t, tag: i === 0 ? r.tag : '', ind, dim: r.dim, cont: i > 0 }));
+  }
+  return lines;
+}
+const linesH = ls => ls.reduce((a, l) => a + (l.gap || 0) + NOTE_LH, 0);
+/* lines を cols 列に流し込む。maxH を超えたぶんは rest に返す */
+function notesSVG(lines, x0, y0, w, maxH, cols, title) {
+  const colW = (w - NOTE_COL_GAP * (cols - 1)) / cols;
+  const top = title ? 24 : 0;
+  let s = title ? `<text class="nttl" x="0" y="13">${esc(title)}</text>`
+    + `<line class="nrule" x1="0" y1="19" x2="${w}" y2="19"/>` : '';
+  let col = 0, y = top, maxY = top, i = 0;
+  for (; i < lines.length; i++) {
+    const l = lines[i], need = (l.gap || 0) + NOTE_LH;
+    if (y + need > maxH) { col++; y = top; if (col >= cols) break; }
+    const x = col * (colW + NOTE_COL_GAP);
+    y += l.gap || 0;
+    const by = y + NOTE_LH - 4;                 /* baseline */
+    if (l.h) s += `<text class="nh" x="${x}" y="${by}">${esc(l.h)}</text>`;
+    else {
+      if (l.tag) s += `<rect class="ntagbox" x="${x}" y="${(y + 2).toFixed(1)}" width="${NOTE_TAG_W - 6}" height="${NOTE_LH - 4}" rx="2"/>`
+        + `<text class="ntag" x="${x + (NOTE_TAG_W - 6) / 2}" y="${by - 1}" text-anchor="middle">${esc(l.tag)}</text>`;
+      s += `<text class="nt${l.dim ? ' dim' : ''}" x="${x + l.ind}" y="${by}">${esc(l.text)}</text>`;
+    }
+    y += NOTE_LH; maxY = Math.max(maxY, y);
+  }
+  return { svg: `<g class="notes" transform="translate(${x0},${y0})">${s}</g>`, h: maxY, rest: lines.slice(i) };
+}
+/* 会場図の下の帯：左＝申し送り事項、右＝凡例 */
+function notesBandSVG(bandY) {
+  const P = VB.pad, W = VB.w;
+  const areaW = W - P * 2 - LEGEND_W - 30;
+  const rows = noteRows();
+  let cols = 1, lines = noteLines(rows, areaW), colH = Infinity;
+  if (linesH(lines) > NOTES_ONE_COL_MAX) {
+    cols = 2; lines = noteLines(rows, (areaW - NOTE_COL_GAP) / 2);
+    colH = Math.ceil(linesH(lines) / 2) + 24 + NOTE_LH;      /* 2列に均等に分ける */
+  }
+  const nt = notesSVG(lines, P, bandY, areaW, Math.min(EX.notesMax, colH), cols, '申し送り事項');
+  const h = Math.max(nt.h, LEGEND_H);
+  return { svg: nt.svg + legendSVG(W - P, bandY + LEGEND_H), h, rest: nt.rest };
+}
+/* PDF の2ページ目以降：申し送りの続きだけを1ページに */
+function notesPageSVG(rest) {
+  const P = VB.pad, W = VB.w, H = VB.h;
+  const nt = notesSVG(rest, P, P, W - P * 2, H - P * 2, 2, '申し送り事項（続き）');
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">`
+    + `<style>${SEAT_CSS}</style><rect x="0" y="0" width="${W}" height="${H}" fill="#fff"/>${nt.svg}</svg>`;
+  return { svg, rest: nt.rest };
 }
 
 function tableSVG(tb) {
@@ -3950,9 +4090,18 @@ function tableSVG(tb) {
         + `<text class="thead" y="${-h / 2 - 12}">${esc(kindHead(tb))}　${used} / ${cap}</text>`;
   } else {
     s += `<rect class="thit" x="${-g.w / 2 - 10}" y="${-g.h / 2 - 46}" width="${g.w + 20}" height="${g.h + 58}" pointer-events="all"/>`
-      +  `<rect class="tbody" x="${-g.w / 2}" y="${-g.h / 2}" width="${g.w}" height="${g.h}" rx="3"/>`
-      +  `<text class="tlabel" y="2">${esc(tb.label)}</text>`
-      +  (EX.guest ? '' : `<text class="tcount" y="19">${used} / ${cap}</text>`);
+      +  `<rect class="tbody" x="${-g.w / 2}" y="${-g.h / 2}" width="${g.w}" height="${g.h}" rx="3"/>`;
+    if (tb.shape === 'head') {
+      /* A2: 高砂に向かって左が新郎、右が新婦（ホテルPDFと同じ並び） */
+      const { g: gn, b: bn } = coupleNames();
+      s += `<text class="tlabel" y="-3">${esc(tb.label)}</text>`
+        +  `<text class="tname" x="${-g.w / 2 + 12}" y="18">新郎 <tspan font-weight="600">${esc(gn || '—')}</tspan></text>`
+        +  `<text class="tname" x="${g.w / 2 - 12}" y="18" text-anchor="end">新婦 <tspan font-weight="600">${esc(bn || '—')}</tspan></text>`
+        +  (EX.guest ? '' : `<text class="tcount" y="18">${used} / ${cap}</text>`);
+    } else {
+      s += `<text class="tlabel" y="2">${esc(tb.label)}</text>`
+        +  (EX.guest ? '' : `<text class="tcount" y="19">${used} / ${cap}</text>`);
+    }
   }
 
   /* 卓メモ。編集用の印なので書き出しには出さない */
@@ -4012,7 +4161,7 @@ function chipSVG(a, x, y, align, tb, seat) {
   const m = chipMeta(a);
   const lines = EX.guest ? guestChipLines(m.p, a) : nameLines(m.p, a);
   const title = (EX.titles || EX.guest) ? (m.p?.title || '') : '';
-  const marks = EX.guest ? (m.child ? [{ k: 'kid' }] : []) : markList(m.p);
+  const marks = EX.guest ? [] : markList(m.p);          /* D2: ゲスト向けにはマークを出さない */
   const b = chipBox(lines, marks.length, title);
   const w = b.w, h = b.h;
   const cxp = align === 'c' ? x : align === 'r' ? x + 11 + w / 2 : x - 11 - w / 2;
@@ -4060,7 +4209,7 @@ function listRowSVG(tb, i, a, g, cls, at, m, pos) {
   if (!a) return s + (G ? '' : `<line class="lrule" x1="${x0}" y1="7" x2="${x2 + 28}" y2="7"/>`) + '</g>';
   const { fam, giv } = nameParts(m.p, a);
   const ttl = (EX.titles || G) ? (m.p?.title || '') : '';
-  const marks = G ? (m.child ? [{ k: 'kid' }] : []) : markList(m.p);
+  const marks = G ? [] : markList(m.p);                  /* D2: ゲスト向けにはマークを出さない */
   /* D2: 同行者の肩書きは「様」の後ろ、本人の肩書きは氏名の前 */
   const suffix = G && m.p?.comp ? ttl : '';
   const prefix = G && ttl && !m.p?.comp ? ttl : '';
@@ -4340,12 +4489,50 @@ async function unseat(asgId, quiet) {
   const ok = await seatWrite(() => sb.from('seating_assignments').delete().eq('id', asgId), '未配席に戻せませんでした');
   if (ok && !quiet) toast(`${label} を未配席に戻しました`, 'ok');
 }
-/* 卓の位置 */
+/* 卓の位置。B2: 手で動かした卓は pos_locked=true にして、卓数を変えても動かさない */
 const savePos = {};
 function saveTablePos(tb) {
   clearTimeout(savePos[tb.id]);
+  tb.pos_locked = true;
   savePos[tb.id] = setTimeout(() => seatWrite(() => sb.from('seating_tables')
-    .update({ x: tb.x, y: tb.y }).eq('id', tb.id), '卓の位置を保存できませんでした'), 250);
+    .update({ x: tb.x, y: tb.y, pos_locked: true }).eq('id', tb.id), '卓の位置を保存できませんでした'), 250);
+}
+
+/* ---------------- B2: 卓の占有範囲と重なり判定 ---------------- */
+const GRID = 2.5;                                  /* グリッドスナップの刻み（％） */
+/* 中心からの半幅・半高（VB 座標）。名前枠のぶんも見込む */
+function tableBox(tb) {
+  const g = tableGeom(tb);
+  if (g.mode === 'round') return { hw: 118, hh: 108 };
+  if (g.mode === 'list') return { hw: g.half + 16, hh: Math.max(g.rowsL, g.rowsR) * g.rowH / 2 + 30 };
+  return { hw: g.w / 2 + 10, hh: g.h / 2 + 46 };
+}
+function tableRect(tb, x = tb.x, y = tb.y) {
+  const b = tableBox(tb), cx = x * VB.w / 100, cy = y * VB.h / 100;
+  return { x1: cx - b.hw, y1: cy - b.hh, x2: cx + b.hw, y2: cy + b.hh };
+}
+const hits = (a, b) => a.x1 < b.x2 && b.x1 < a.x2 && a.y1 < b.y2 && b.y1 < a.y2;
+/* (x, y) に置いたとき重なる相手の id。出入口は 'door' */
+function clashesOf(tb, x, y) {
+  const r = tableRect(tb, x, y), out = [];
+  for (const o of T.tables) if (o.id !== tb.id && hits(r, tableRect(o))) out.push(o.id);
+  if (hits(r, doorRect())) out.push('door');
+  return out;
+}
+/* 会場の壁の内側に収まる範囲へ丸める */
+function clampPos(tb, x, y) {
+  const b = tableBox(tb), P = VB.pad;
+  return {
+    x: Math.min((VB.w - P - b.hw) / VB.w * 100, Math.max((P + b.hw) / VB.w * 100, x)),
+    y: Math.min((VB.h - P - b.hh) / VB.h * 100, Math.max((P + b.hh) / VB.h * 100, y)),
+  };
+}
+/* 重ならない空き位置をグリッド順に探す */
+function findFreeSpot(tb, taken) {
+  for (let y = 30; y <= 90; y += GRID) for (let x = 10; x <= 90; x += GRID) {
+    if (!taken.some(o => o.id !== tb.id && hits(tableRect(o), tableRect(tb, x, y)))) return { x, y };
+  }
+  return null;
 }
 
 /* ---------------- B6 世帯の確認 ---------------- */
@@ -4543,9 +4730,20 @@ function onDragMove(ev) {
   if (d.kind === 'table') {
     const tb = T.tables.find(t => t.id === d.id);
     const r = $('#sv-box').getBoundingClientRect();
-    tb.x = Math.min(97, Math.max(3, d.x0 + dx / r.width * 100));
-    tb.y = Math.min(97, Math.max(3, d.y0 + dy / r.height * 100));
+    /* 画面上の SVG は viewBox を等比で収めているので、実描画の幅・高さで換算する */
+    const k = Math.min(r.width / VB.w, r.height / VB.h);
+    let nx = d.x0 + dx / (VB.w * k) * 100, ny = d.y0 + dy / (VB.h * k) * 100;
+    if (T.snap) { nx = Math.round(nx / GRID) * GRID; ny = Math.round(ny / GRID) * GRID; }
+    ({ x: nx, y: ny } = clampPos(tb, nx, ny));
+    tb.x = +nx.toFixed(2); tb.y = +ny.toFixed(2);
     d.g?.setAttribute('transform', `translate(${(tb.x * VB.w / 100).toFixed(1)},${(tb.y * VB.h / 100).toFixed(1)})`);
+    /* B2: 他の卓・高砂・出入口と重なる位置は臙脂の枠で警告する */
+    const cl = clashesOf(tb, tb.x, tb.y);
+    d.clash = cl.length > 0;
+    d.g?.classList.toggle('clash', d.clash);
+    $$('#sv-canvas .tb.clash').forEach(g => { if (g !== d.g && !cl.includes(g.dataset.id)) g.classList.remove('clash'); });
+    for (const id of cl) if (id !== 'door') $(`#sv-canvas .tb[data-id="${id}"]`)?.classList.add('clash');
+    $('#sv-canvas .doorg')?.classList.toggle('clash', cl.includes('door'));
     return;
   }
   d.ghost.style.transform = `translate(${ev.clientX + 12}px,${ev.clientY + 10}px)`;
@@ -4562,7 +4760,17 @@ function onDragUp(ev) {
   const tb = kind === 'table' ? T.tables.find(x => x.id === id) : null;
   endDrag();
 
-  if (kind === 'table') { if (moved && tb) { saveTablePos(tb); renderSeating(); } return; }
+  if (kind === 'table') {
+    if (!moved || !tb) return;
+    if (d.clash) {                                /* B2: 重なったままでは保存しない */
+      tb.x = d.x0; tb.y = d.y0; renderSeating();
+      toast('他の卓・高砂・出入口と重なるため、元の位置に戻しました', 'err');
+      return;
+    }
+    if (tb.x !== d.x0 || tb.y !== d.y0) saveTablePos(tb);
+    renderSeating();
+    return;
+  }
 
   if (!moved) {                                   /* クリック／タップ */
     if (kind === 'person') {
@@ -4827,14 +5035,14 @@ function saveBlob(blob, name) {
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 4000);
 }
-/* SVG 文字列 → Canvas（PNG／PDF で共用） */
-async function svgToCanvas(svg, scale) {
+/* SVG 文字列 → Canvas（PNG／PDF で共用）。高さは申し送りの帯のぶん伸びることがある */
+async function svgToCanvas(svg, scale, w = VB.w, h = VB.h) {
   const url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
   const img = new Image();
   img.decoding = 'sync';
   await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = url; });
   const cv = document.createElement('canvas');
-  cv.width = VB.w * scale; cv.height = VB.h * scale;
+  cv.width = w * scale; cv.height = h * scale;
   const ctx = cv.getContext('2d');
   ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
   ctx.drawImage(img, 0, 0, cv.width, cv.height);
@@ -4863,8 +5071,8 @@ async function loadJPFont() {
   } catch { jpFontCache = null; }
   return jpFontCache;
 }
-/* C2: A3 横・1ページ。図を余白いっぱいに収める */
-async function makePDF(cv, name, caption) {
+/* C2: A3 横。図を余白いっぱいに収める。pages が複数なら2ページ目以降に続ける */
+async function makePDF(pages, name, caption) {
   const mod = await import('https://esm.sh/jspdf');
   const JsPDF = mod.jsPDF || mod.default?.jsPDF || mod.default;
   const pdf = new JsPDF({ orientation: 'landscape', unit: 'mm', format: 'a3', compress: true });
@@ -4872,15 +5080,20 @@ async function makePDF(cv, name, caption) {
   const font = await loadJPFont();
   const capH = caption && font ? 7 : 0;
   const boxW = PW - M * 2, boxH = PH - M * 2 - capH;
-  const k = Math.min(boxW / VB.w, boxH / VB.h);
-  const w = VB.w * k, h = VB.h * k;
-  pdf.addImage(cv.toDataURL('image/png'), 'PNG', (PW - w) / 2, M, w, h, undefined, 'FAST');
   if (caption && font) {
     pdf.addFileToVFS('NotoSansJP.ttf', font);
     pdf.addFont('NotoSansJP.ttf', 'NotoSansJP', 'normal');
-    pdf.setFont('NotoSansJP', 'normal'); pdf.setFontSize(9); pdf.setTextColor(111, 102, 94);
-    pdf.text(caption, PW / 2, PH - M + 1, { align: 'center' });
   }
+  pages.forEach((pg, i) => {
+    if (i) pdf.addPage();
+    const k = Math.min(boxW / pg.w, boxH / pg.h);
+    const w = pg.w * k, h = pg.h * k;
+    pdf.addImage(pg.cv.toDataURL('image/png'), 'PNG', (PW - w) / 2, M, w, h, undefined, 'FAST');
+    if (caption && font) {
+      pdf.setFont('NotoSansJP', 'normal'); pdf.setFontSize(9); pdf.setTextColor(111, 102, 94);
+      pdf.text(caption + (pages.length > 1 ? `　${i + 1} / ${pages.length}` : ''), PW / 2, PH - M + 1, { align: 'center' });
+    }
+  });
   pdf.setProperties({ title: name });
   pdf.save(name + '.pdf');
 }
@@ -4889,16 +5102,29 @@ async function exportSeating({ fmt, titles, guest }) {
   const view0 = T.view;
   if (guest) T.view = 'list';                 /* D1: ゲスト向けは表形式に固定 */
   EX.titles = !!titles; EX.guest = !!guest;
-  let svg;
-  try { svg = canvasSVG(true); }
-  finally { T.view = view0; EX.titles = false; EX.guest = false; }
+  /* C3: PDF は帯の高さに上限を設け、余りは2ページ目へ。PNG は画像の縦を伸ばす */
+  EX.notesMax = (fmt === 'pdf' && !guest) ? NOTES_BAND_MAX : Infinity;
+  let svg, h, extra = [];
+  try {
+    svg = canvasSVG(true); h = EX.h;
+    let rest = EX.rest;
+    while (rest.length) {
+      const pg = notesPageSVG(rest);
+      extra.push(pg.svg);
+      if (pg.rest.length >= rest.length) break;   /* 念のため無限ループ防止 */
+      rest = pg.rest;
+    }
+  } finally { T.view = view0; EX.titles = false; EX.guest = false; EX.notesMax = Infinity; EX.rest = []; }
   const key = guest ? 'seating_guest' : 'seating_admin';
   const name = DLNAME(key);
+  const scale = fmt === 'pdf' ? 3 : 2;
   try {
-    const cv = await svgToCanvas(svg, fmt === 'pdf' ? 3 : 2);
+    const cv = await svgToCanvas(svg, scale, VB.w, h);
     if (fmt === 'pdf') {
-      await makePDF(cv, name, guest ? GUEST_HEAD.join('　／　') : '座席表（管理用）　' + GUEST_HEAD[0]);
-      toast('PDFを書き出しました', 'ok');
+      const pages = [{ cv, w: VB.w, h }];
+      for (const s of extra) pages.push({ cv: await svgToCanvas(s, scale, VB.w, VB.h), w: VB.w, h: VB.h });
+      await makePDF(pages, name, guest ? guestHead().join('　／　') : '座席表（管理用）　' + HEAD_DATE);
+      toast(pages.length > 1 ? `PDFを書き出しました（${pages.length} ページ）` : 'PDFを書き出しました', 'ok');
     } else {
       saveBlob(await canvasBlob(cv), name + '.png');
       toast('PNGを書き出しました', 'ok');
@@ -4911,9 +5137,9 @@ async function exportSeating({ fmt, titles, guest }) {
 $('#sv-dl').addEventListener('click', () => {
   const box = $('#m-table-box');
   box.innerHTML = `<h3>座席表ダウンロード（管理用）</h3>
-    <p class="note">配慮事項・アレルギー・個別ギフト・お子様のマークと凡例が入ります。ゲストには渡さないでください。</p>
+    <p class="note">配慮事項・アレルギー・個別ギフト・お子様メニュー・お子様椅子のマークと凡例、左下に申し送り事項（全体・卓ごと・配慮事項一覧）が入ります。ゲストには渡さないでください。</p>
     <div class="f"><label>形式</label><select id="dl-fmt">
-      <option value="png">PNG（画像）</option><option value="pdf">PDF（A3 横・1ページ）</option></select></div>
+      <option value="png">PNG（画像。申し送りが多いときは縦に伸びます）</option><option value="pdf">PDF（A3 横。申し送りが収まらないときは2ページ目に続きます）</option></select></div>
     <div class="f"><label>肩書き</label><select id="dl-title">
       <option value="1">付き（名前の下に小さく表示）</option><option value="0">なし</option></select></div>
     <div class="f"><label>表示形式</label>
@@ -4934,8 +5160,8 @@ $('#sv-dl').addEventListener('click', () => {
 $('#sv-gdl').addEventListener('click', () => {
   const box = $('#m-table-box');
   box.innerHTML = `<h3>ゲスト向け座席表ダウンロード</h3>
-    <p class="note">表形式（ホテルPDF風）で固定です。肩書き＋「姓 名 様」を印字し、お子様にはキッズマークだけを付けます。
-      配慮事項・アレルギー・個別ギフトなど管理用のマークは出ません。</p>
+    <p class="note">表形式（ホテルPDF風）で固定です。肩書き＋「姓 名 様」を印字します。
+      配慮事項・アレルギー・個別ギフト・お子様のマークや申し送りなど管理用の情報は出ません。</p>
     <div class="f"><label>形式</label><select id="gd-fmt">
       <option value="pdf">PDF（A3 横・1ページ）</option><option value="png">PNG（画像）</option></select></div>
     <div class="row" style="justify-content:flex-end;margin:16px 0 0">
@@ -5064,6 +5290,44 @@ $('#sv-lock').addEventListener('change', e => {
   localStorage.setItem('seatLock', T.lock ? '1' : '0');
   toast(T.lock ? 'レイアウトを固定しました' : '卓をドラッグして動かせます', 'ok');
 });
+$('#sv-snap').addEventListener('change', e => {
+  T.snap = e.target.checked;
+  localStorage.setItem('seatSnap', T.snap ? '1' : '0');
+});
+/* B2: 自動配置に戻す（確認あり）。全卓を卓数ルールで置き直し pos_locked=false */
+$('#sv-reset').addEventListener('click', () => {
+  const n = T.tables.filter(t => t.pos_locked).length;
+  askSeat('自動配置に戻します',
+    n ? `手で動かした卓が ${n} 卓あります。` : '手で動かした卓はありません。',
+    '全卓を卓数ルールの位置に置き直します。誰がどの卓かは変わりません。', resetLayout, '戻す');
+});
+async function resetLayout() {
+  const gs = guestTables(), pos = autoLayout(gs.length), patches = [];
+  gs.forEach((t, i) => {
+    const p = pos[i] || { x: 50, y: ROW_MID };
+    const label = autoLabeled(t) ? String(i + 1) : t.label;
+    const patch = { x: p.x, y: p.y, pos_locked: false, sort_order: i + 1, label };
+    Object.assign(t, patch);
+    patches.push({ id: t.id, ...patch });
+  });
+  const hd = headTable();
+  if (hd && (hd.x !== HEAD.x || hd.y !== HEAD.y || hd.pos_locked)) {
+    const patch = { x: HEAD.x, y: HEAD.y, pos_locked: false };
+    Object.assign(hd, patch); patches.push({ id: hd.id, ...patch });
+  }
+  renderSeating();
+  if (await savePatches(patches)) toast('自動配置に戻しました', 'ok');
+}
+/* C1: 全体の申し送りは入力が止まったら自動保存 */
+let noteTimer = null;
+$('#sv-note').addEventListener('input', () => {
+  clearTimeout(noteTimer);
+  $('#sv-notesaved').textContent = '…';
+  noteTimer = setTimeout(async () => {
+    const ok = await saveEventSettings({ seating_note: $('#sv-note').value.trim() || null });
+    $('#sv-notesaved').textContent = ok ? '保存しました' : '保存に失敗しました';
+  }, 600);
+});
 const foldSide = v => {
   T.folded = v;
   localStorage.setItem('seatFold', v ? '1' : '0');
@@ -5077,24 +5341,27 @@ $('#sv-unfold').addEventListener('click', () => foldSide(false));
 /* ---------------- F1・F2・F5・F6 卓数の変更と再配置 ---------------- */
 /* F5: 自動連番のまま（数字だけ）の卓名は付け替える。改名された卓名はそのまま残す */
 const autoLabeled = tb => /^\d+$/.test(String(tb.label ?? '').trim());
-/* F6: 手で動かされているか（現在の卓数の自動配置と一致しないか） */
-function layoutDirty() {
-  const gs = guestTables(), pos = autoLayout(gs.length);
-  if (gs.length > MAX_TABLES) return false;
-  return gs.some((t, i) => !pos[i]
-    || Math.abs(t.x - pos[i].x) > 0.5 || Math.abs(t.y - pos[i].y) > 0.5);
-}
-/* 現在の卓に自動レイアウトを当てる。DB へは patch をまとめて送る */
+/* 現在の卓に自動レイアウトを当てる。DB へは patch をまとめて送る。
+   B2: 手で動かした卓（pos_locked）は位置を保ち、それ以外の卓だけを
+   固定卓・高砂と重ならない自動配置の位置へ順に置く（まず自分の番号の位置、次に空いている位置） */
 function applyLayout(list) {
   const pos = autoLayout(list.length);
+  const taken = [...list.filter(t => t.pos_locked), ...T.tables.filter(t => t.shape === 'head')];
   const patches = [];
   list.forEach((t, i) => {
-    const p = pos[i] || { x: 50, y: ROW_MID };
-    const label = autoLabeled(t) ? String(i + 1) : t.label;
-    if (t.x !== p.x || t.y !== p.y || t.label !== label || t.sort_order !== i + 1) {
-      Object.assign(t, { x: p.x, y: p.y, label, sort_order: i + 1 });
-      patches.push({ id: t.id, x: p.x, y: p.y, label, sort_order: i + 1 });
+    const patch = {};
+    if (!t.pos_locked) {
+      const ok = p => !taken.some(o => o.id !== t.id && hits(tableRect(o), tableRect(t, p.x, p.y)));
+      const p = [pos[i], ...pos].filter(Boolean).find(ok) || findFreeSpot(t, taken) || { x: 50, y: ROW_MID };
+      if (t.x !== p.x || t.y !== p.y) { patch.x = p.x; patch.y = p.y; }
+      Object.assign(t, patch);
+      taken.push(t);
     }
+    const label = autoLabeled(t) ? String(i + 1) : t.label;
+    if (t.label !== label) patch.label = label;
+    if (t.sort_order !== i + 1) patch.sort_order = i + 1;
+    Object.assign(t, patch);
+    if (Object.keys(patch).length) patches.push({ id: t.id, ...patch });
   });
   return patches;
 }
@@ -5129,13 +5396,7 @@ async function setTableCount(n) {
   const gs = guestTables();
   const cur = gs.length;
   n = Math.min(MAX_TABLES, Math.max(1, n));
-  if (n === cur) {
-    if (!layoutDirty()) return;
-    return askSeat('自動レイアウトに戻しますか',
-      '手で動かした卓があります。', '卓数に応じた自動レイアウトに置き直しますか。',
-      async () => { const ps = applyLayout(guestTables()); renderSeating(); await savePatches(ps); },
-      '置き直す');
-  }
+  if (n === cur) return;
   const shrink = n < cur;
   const drop = shrink ? gs.slice(n) : [];
   const moving = shrink ? drop.reduce((k, t) => k + (T.byTable.get(t.id) || []).length, 0) : 0;
@@ -5152,11 +5413,12 @@ async function setTableCount(n) {
       if (ok) await savePatches(ps);
       toast(moving ? `${cur - n} 卓を削除し、${moving} 名を未配席に戻しました` : `${cur - n} 卓を削除しました`, 'ok');
     } else {
+      /* B2: 新しい卓は空いている位置へ（位置は applyLayout が決め直す） */
       const pos = autoLayout(n);
       const rows = [];
       for (let i = cur; i < n; i++) {
         rows.push({ label: String(i + 1), capacity: SEATS_PER_TABLE, shape: 'round',
-          x: pos[i].x, y: pos[i].y, sort_order: i + 1 });
+          x: pos[i].x, y: pos[i].y, sort_order: i + 1, pos_locked: false });
       }
       const { data, error } = await sb.from('seating_tables').insert(rows).select();
       if (error) { toast('卓の追加に失敗：' + error.message, 'err'); await reloadSeating(); return; }
@@ -5173,11 +5435,6 @@ async function setTableCount(n) {
     return askSeat(`${cur - n} 卓を削除します`,
       `外れる卓（${drop.map(t => t.label).join('・')}）に ${moving} 名が配席されています。`,
       `この ${moving} 名を未配席に戻します。`, run);
-  }
-  if (layoutDirty()) {
-    return askSeat('自動レイアウトで再配置します',
-      '手で動かした卓がありますが、卓数を変えると全体を自動レイアウトで置き直します。',
-      '続けますか。', run);
   }
   return run();
 }
@@ -5416,5 +5673,52 @@ $$('#sv-view button').forEach(b => b.addEventListener('click', () => {
   renderSeating();
 }));
 
-
-
+/* ============================================================
+   A. 基本情報（event_settings：新郎新婦の名前・全体の申し送り）
+   ============================================================ */
+const EV_DEF = { groom_name: '', bride_name: '', groom_name_latin: '', bride_name_latin: '', seating_note: '' };
+async function loadEventSettings() {
+  try {
+    const { data, error } = await sb.from('event_settings').select('*').eq('id', 1).maybeSingle();
+    S.ev = error ? { ...EV_DEF } : { ...EV_DEF, ...(data || {}) };
+    if (error) toast('基本情報の読み込みに失敗：' + error.message, 'err');
+  } catch { S.ev = { ...EV_DEF }; }
+}
+async function saveEventSettings(patch) {
+  S.ev = { ...(S.ev || EV_DEF), ...patch };
+  const { error } = await sb.from('event_settings').upsert({ id: 1, ...patch }, { onConflict: 'id' });
+  if (error) { toast('基本情報の保存に失敗：' + error.message, 'err'); return false; }
+  return true;
+}
+/* 高砂・座席表の見出しで使う名前 */
+function coupleNames() {
+  const e = S.ev || EV_DEF;
+  return { g: (e.groom_name || '').trim(), b: (e.bride_name || '').trim(),
+           gl: (e.groom_name_latin || '').trim(), bl: (e.bride_name_latin || '').trim() };
+}
+function openEventModal() {
+  const e = S.ev || EV_DEF;
+  const box = $('#m-ev-box');
+  box.innerHTML = `<h3>基本情報</h3>
+    <p class="note">新郎新婦の名前は、配席タブの高砂（向かって左が新郎・右が新婦）と、座席表（管理用・ゲスト向け）の見出しに使います。</p>
+    <div class="two" style="margin-top:12px">
+      <div class="f"><label>新郎（漢字）</label><input id="ev-g" value="${esc(e.groom_name || '')}" placeholder="例：森 喬由樹" maxlength="40"></div>
+      <div class="f"><label>新婦（漢字）</label><input id="ev-b" value="${esc(e.bride_name || '')}" placeholder="例：吉永 百慧" maxlength="40"></div>
+      <div class="f"><label>新郎（ローマ字）</label><input id="ev-gl" value="${esc(e.groom_name_latin || '')}" placeholder="例：Takayuki Mori" maxlength="60"></div>
+      <div class="f"><label>新婦（ローマ字）</label><input id="ev-bl" value="${esc(e.bride_name_latin || '')}" placeholder="例：Momoe Yoshinaga" maxlength="60"></div>
+    </div>
+    <div class="row" style="justify-content:flex-end;margin:16px 0 0">
+      <button class="btn o" data-close>キャンセル</button>
+      <button class="btn" id="ev-save">保存</button></div>`;
+  openModal('m-ev');
+  wireClose(box);
+  $('#ev-g').focus();
+  $('#ev-save').addEventListener('click', async () => {
+    const v = id => $(id).value.trim() || null;
+    const patch = { groom_name: v('#ev-g'), bride_name: v('#ev-b'),
+                    groom_name_latin: v('#ev-gl'), bride_name_latin: v('#ev-bl') };
+    closeModal('m-ev');
+    if (await saveEventSettings(patch)) { toast('基本情報を保存しました', 'ok'); renderSeating(); }
+  });
+}
+$('#ev-open').addEventListener('click', openEventModal);
