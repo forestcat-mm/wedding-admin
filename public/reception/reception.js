@@ -4,6 +4,7 @@
    仕様：00_spec/reception.md（v1）、00_spec/03_reception-v2.md（v2：対象の限定・サイド切替・PC レイアウト）、
          00_spec/04_reception-v2.1.md（v2.1：同行者の表示） */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { planCheckin, enterAllowed } from './checkin-logic.js';
 const SUPA_URL = 'https://cvnqnvnppvfhwmrehagt.supabase.co';
 const SUPA_KEY = 'sb_publishable_ZYwTP155dx57wEopKpezNA_LR1IOjID';
 const sb = createClient(SUPA_URL, SUPA_KEY);
@@ -247,10 +248,78 @@ async function checkIn(g) {
     enqueue({ guestId: g.id, path: 'checkin', body: { guest_id: g.id, undo: true } });
     return;
   }
-  const left = g.items.filter(i => !i.handed_at);
-  if (left.length && !await confirmBox(`お渡し物があります（${left.map(i => i.label).join('・')}）。お渡し前ですが受付済にしますか。`)) return;
-  g.checked_in_at = new Date().toISOString(); g.checked_in_by = R.me.label;
-  enqueue({ guestId: g.id, path: 'checkin', body: { guest_id: g.id } });
+  openCheckinPop(g);
+}
+
+/* ---------------- v2.3: 受付の確認ポップアップ ----------------
+   氏名・同行者・卓席・受付IDと、お渡し物のチェックを 1 枚で確認してから受付する。
+   未チェックのお渡し物があれば受付せず、赤字で項目名を出してポップアップは残す。 */
+const POP = { g: null, openedAt: 0, onKey: null };
+function openCheckinPop(g) {
+  POP.g = g; POP.openedAt = Date.now();
+  const box = $('#ckpop-box');
+  const items = g.items || [];
+  const compRows = comps(g).map(c => `<li>${esc(compLabel(g, c))}</li>`).join('');
+  box.innerHTML = `
+    <div class="ck-head">
+      ${R.ridOn && g.reception_id ? `<div class="ck-rid">${esc(g.reception_id)}</div>` : ''}
+      <div class="ck-name">${esc(fullName(g)) || '（名前なし）'}</div>
+      <div class="ck-latin">${esc(latin(g))}</div>
+      <div class="ck-meta">${sideBadge(g)} ${g.table ? `卓 <b>${esc(g.table)}</b>${g.seat ? `　席 ${g.seat}` : ''}` : '卓：未定'}<span class="ck-n">計${comps(g).length + 1}名</span></div>
+      ${compRows ? `<ul class="ck-comps">${compRows}</ul>` : ''}
+    </div>
+    ${items.length ? `<div class="ck-items" id="ck-items">
+      <div class="ck-ih">お渡しする物があります</div>
+      ${items.map(it => `<label class="ck-item${it.handed_at ? ' handed' : ''}" data-item="${esc(it.id)}">
+        <input type="checkbox" value="${esc(it.id)}"${it.handed_at ? ' checked' : ''}>
+        <span class="lb"><b>${esc(it.label)}</b>${it.note ? `<small>メモ：${esc(it.note)}</small>` : ''}${it.handed_at ? `<small class="at">お渡し済 ${fmtT(it.handed_at)}${it.handed_by ? '・' + esc(it.handed_by) : ''}</small>` : ''}</span>
+      </label>`).join('')}
+      <p class="ck-err" id="ck-err" hidden></p>
+    </div>` : ''}
+    <div class="mrow"><button class="btn o" id="ck-cancel">キャンセル</button><button class="btn" id="ck-go">受付</button></div>`;
+  $('#ckpop').hidden = false;
+  $('#ck-cancel').onclick = closeCheckinPop;
+  $('#ck-go').onclick = submitCheckinPop;
+  box.addEventListener('change', e => { if (e.target.matches('input[type=checkbox]')) clearCheckinError(); });
+  /* PC：Enter で受付、Esc でキャンセル。開いてから 0.5 秒は Enter を受け付けない */
+  POP.onKey = e => {
+    if ($('#ckpop').hidden) return;
+    if (e.key === 'Escape') { e.preventDefault(); closeCheckinPop(); }
+    else if (e.key === 'Enter') { e.preventDefault(); if (enterAllowed(POP.openedAt)) submitCheckinPop(); }
+  };
+  document.addEventListener('keydown', POP.onKey);
+  $('#ck-go').focus();
+}
+function closeCheckinPop() {
+  $('#ckpop').hidden = true;
+  if (POP.onKey) document.removeEventListener('keydown', POP.onKey);
+  POP.g = null; POP.onKey = null;
+  if (isPC()) $('#q').focus();
+}
+function clearCheckinError() {
+  const err = $('#ck-err'); if (err) err.hidden = true;
+  $$('#ck-items .ck-item.miss').forEach(el => el.classList.remove('miss'));
+}
+function submitCheckinPop() {
+  const g = POP.g; if (!g) return;
+  const checked = new Set($$('#ck-items input[type=checkbox]:checked').map(i => i.value));
+  const plan = planCheckin(g, checked);
+  if (!plan.ok) {
+    const err = $('#ck-err');
+    err.textContent = `お渡しが済んでいません：${plan.missing.join('・')}`; err.hidden = false;
+    $$('#ck-items .ck-item').forEach(el => el.classList.toggle('miss', plan.missingIds.includes(el.dataset.item)));
+    return;
+  }
+  /* 手元の表示を先に変え、お渡し済 → 受付済の順にキューへ（失敗時は未送信・再送の仕組みに乗る） */
+  const now = new Date().toISOString();
+  for (const op of plan.ops) {
+    if (op.itemId) { const it = g.items.find(i => i.id === op.itemId); if (it) { it.handed_at = now; it.handed_by = R.me.label; } }
+    else { g.checked_in_at = now; g.checked_in_by = R.me.label; }
+    R.queue.push({ guestId: op.guestId, path: op.path, body: op.body });
+  }
+  R.pendingIds.add(g.id);
+  closeCheckinPop();
+  render(); flush();
 }
 async function hand(g, it) {
   if (it.handed_at) {

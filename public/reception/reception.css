@@ -129,6 +129,30 @@ button,input{font-family:inherit;font-size:inherit}
 }
 
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:30;padding:20px}
+/* v2.3: 受付の確認ポップアップ */
+.mbox.ck{width:440px;max-height:92vh;overflow:auto}
+.ck-head{text-align:center;margin-bottom:12px}
+.ck-rid{font-family:var(--display);font-size:30px;letter-spacing:.08em;line-height:1;color:var(--ink2)}
+.ck-name{font-size:24px;font-weight:600;line-height:1.3;margin-top:4px}
+.ck-latin{font-size:12px;color:var(--ink2);letter-spacing:.08em}
+.ck-meta{margin-top:8px;font-size:14px}
+.ck-meta b{font-family:var(--serif);font-size:16px}
+.ck-n{display:inline-block;margin-left:8px;font-size:11px;padding:1px 7px;border:1px solid var(--line);border-radius:2px;color:var(--ink2)}
+.ck-comps{list-style:none;margin:8px 0 0;padding:8px 0 0;border-top:1px dashed var(--line);font-size:13px;color:var(--ink2);text-align:left}
+.ck-comps li{padding:2px 0 2px 1em;text-indent:-1em}
+.ck-comps li::before{content:"└ ";color:var(--line)}
+.ck-items{background:#FBF3E3;border:2px solid var(--warn);border-radius:4px;padding:10px 12px;margin:0 0 14px}
+.ck-ih{font-weight:700;font-size:15px;color:#7a5a12;margin-bottom:8px}
+.ck-item{display:flex;align-items:flex-start;gap:12px;background:#fff;border:2px solid #eadcbb;border-radius:4px;padding:10px 12px;margin-bottom:8px;cursor:pointer}
+.ck-item.handed{border-color:#c9dccf;background:#F7FAF7}
+.ck-item.miss{border-color:var(--enji);background:#FBEFEF}
+.ck-item input{width:28px;height:28px;margin:0;flex:none;accent-color:var(--ok)}
+.ck-item .lb{flex:1;min-width:0}
+.ck-item .lb b{font-size:16px}
+.ck-item .lb small{display:block;font-size:12px;color:var(--ink2);margin-top:2px}
+.ck-item .lb small.at{color:var(--ok)}
+.ck-err{margin:4px 0 0;color:var(--enji);font-weight:700;font-size:14px}
+.mbox.ck .mrow .btn{padding:12px 22px;font-size:15px}
 .mbox{background:#fff;padding:22px;width:360px;max-width:100%;border-radius:4px}
 .mbox p{margin:0 0 16px;font-size:15px;line-height:1.7}
 .mrow{display:flex;gap:10px;justify-content:flex-end}
