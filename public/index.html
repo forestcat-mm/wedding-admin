@@ -37,7 +37,7 @@
 <!-- ===== DASHBOARD ===== -->
 <section class="view on" id="v-dash">
   <div class="h2row"><h2>ダッシュボード</h2><span class="sp"></span>
-    <button class="btn o s" id="ev-open" title="新郎新婦の名前（漢字・ローマ字）">⚙ 基本情報</button></div>
+    <button class="btn o s" id="ev-open" title="新郎新婦の姓名・座席表タイトル">⚙ 基本情報</button></div>
   <p class="sub" id="d-sub"></p>
   <div class="alert" id="d-dup" hidden></div>
   <div class="cards" id="d-cards"></div>
@@ -156,8 +156,17 @@
 
 <!-- ===== SEATING ===== -->
 <section class="view" id="v-seating">
-  <h2>配席</h2>
-  <p class="sub">卓数を選ぶと会場レイアウトを自動生成します（最大3行×4列・高砂は最前面中央）。右の未配席リストから卓へドラッグして配席します。タッチ端末では、人をタップして選び、卓をタップしても配席できます。「レイアウトを固定」をオフにすると卓そのものをドラッグで動かせます（動かした卓は卓数を変えても位置を保ちます）。</p>
+  <div class="h2row"><h2>配席</h2><span class="mode" id="sv-mode">プレビュー</span><span class="sp"></span>
+    <button class="btn s" id="sv-edit">編集</button></div>
+  <p class="sub">卓は「行・列・各行の卓数」のグリッドに置きます（各行は左右対称にセンタリング）。既定はプレビューで、配席や卓の操作は「編集」を押してから。編集中の変更はブラウザ内に保持し、「保存」でまとめて反映します。</p>
+
+  <div class="editband" id="sv-editband" hidden>
+    <b>編集中</b>（未保存の変更 <b id="sv-nchg">0</b> 件）
+    <span class="note">配席・卓の移動・卓名／定員／メモ・行列設定・全体の申し送りは「保存」までDBに書きません。</span>
+    <span class="sp"></span>
+    <button class="btn s o" id="sv-discard">破棄</button>
+    <button class="btn s" id="sv-save">保存</button>
+  </div>
 
   <div class="panel seatbar">
     <div class="row" style="margin:0">
@@ -169,14 +178,10 @@
       <span class="sp"></span>
       <div class="vtog" id="sv-view" role="group" aria-label="表示形式">
         <button data-v="round" class="on">円卓表示</button><button data-v="list">表形式表示</button></div>
-      <label class="cntbox">卓数
-        <select id="sv-count"></select></label>
+      <span id="sv-grid" class="gridbar"></span>
       <span class="cntnote"><b id="sv-avg">1卓あたり平均 — 名</b><small id="sv-min"></small></span>
       <button class="btn s" id="sv-bulk">一括配席</button>
       <button class="btn s" id="sv-swap" title="卓を2つ選んで、配席をまるごと入れ替えます">卓を入れ替え</button>
-      <label class="lockbox" title="誤操作防止。オフにすると卓そのものをドラッグして動かせます"><input type="checkbox" id="sv-lock" checked> レイアウトを固定</label>
-      <label class="lockbox" title="卓を 2.5% 刻みの格子に合わせて置きます"><input type="checkbox" id="sv-snap" checked> グリッドにスナップ</label>
-      <button class="btn o s" id="sv-reset" title="全卓を卓数ルールの位置に置き直します">自動配置に戻す</button>
       <button class="btn o s" id="sv-dl">座席表ダウンロード</button>
       <button class="btn o s" id="sv-gdl">ゲスト向け座席表</button>
       <button class="btn o s" id="sv-csv">配席CSV</button>
@@ -191,21 +196,20 @@
 
   <div class="panel notepanel">
     <div class="row" style="margin:0 0 6px"><b>全体の申し送り</b>
-      <span class="note">会場・進行への申し送り。管理用座席表の左下に印字されます（自動保存）。卓ごとの申し送りは各卓のメモ（📝）に。</span>
-      <span class="sp"></span><span class="note" id="sv-notesaved"></span></div>
-    <textarea id="sv-note" rows="2" placeholder="例：車椅子のゲストが2名。B卓とD卓の間の導線を空けてください"></textarea>
+      <span class="note">会場・進行への申し送り。管理用座席表の左下に印字されます。卓ごとの申し送りは各卓のメモ（📝）に。</span>
+      <span class="sp"></span><span class="note" id="sv-notehint"></span></div>
+    <textarea id="sv-note" rows="2" placeholder="例：車椅子のゲストが2名。B卓とD卓の間の導線を空けてください" readonly></textarea>
   </div>
 
-  <div class="seatwrap" id="sv-wrap">
+  <div class="seatwrap pv" id="sv-wrap">
     <div class="panel canvaspanel">
       <div class="canvashead">
         <b>会場レイアウト</b>
         <span class="note" id="sv-venue"></span>
         <span class="sp"></span>
-        <button class="btn s o" id="sv-add" title="卓数を1つ増やします">＋ 卓を追加</button>
       </div>
       <div class="canvasbox" id="sv-box"></div>
-      <p class="note" style="margin:8px 0 0">卓をダブルクリック（タッチは長押し）で卓名・定員・形・メモ（卓の申し送り）・卓の入れ替えを編集。📝はメモ付きの卓で、ホバーすると内容が出ます。「レイアウトを固定」をオフにして卓をドラッグすると位置を変えられます（他の卓・高砂・出入口と重なる位置は臙脂の枠で警告し、その位置には置けません）。席にカーソルを合わせると名前の左に出る「×」で未配席に戻します。空席をクリックすると、未配席の人を選んでその席に配席できます。</p>
+      <p class="note" style="margin:8px 0 0">編集モードで：卓をダブルクリック（タッチは長押し）で卓名・定員・形・メモ・配席の入れ替えを編集。卓をドラッグして別の卓に重ねると位置を入れ替えます。📝はメモ付きの卓で、ホバーすると内容が出ます。席にカーソルを合わせると名前の左に出る「×」で未配席に戻します。空席をクリックすると、未配席の人を選んでその席に配席できます。定員0の卓（物置きなど）は卓名だけの小さな円で、配席できません。</p>
     </div>
 
     <aside class="panel sidepanel" id="sv-side">
@@ -219,6 +223,7 @@
         <select id="sv-circle"><option value="">友人圏：すべて</option></select>
         <select id="sv-sort"><option value="circle">並び：友人圏順</option><option value="latin">並び：ローマ字順</option></select>
       </div>
+      <p class="note previewnote">プレビュー中です。配席するには上の「編集」を押してください。</p>
       <div id="sv-list"></div>
       <p class="note" id="sv-selnote" hidden></p>
     </aside>

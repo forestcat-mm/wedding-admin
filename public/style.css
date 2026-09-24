@@ -545,3 +545,23 @@ table.bkprev td.who{white-space:normal;line-height:1.9}
 .notepanel textarea{width:100%;border:1px solid var(--line);padding:8px 10px;font-family:inherit;
   font-size:12.5px;line-height:1.6;resize:vertical;min-height:52px}
 #m-ev-box input{font-size:14px}
+
+/* ---- プレビュー／編集モード・グリッド（2026-09-24） ---- */
+.h2row .mode{font-size:11px;color:var(--ink2);border:1px solid var(--line);padding:2px 8px;border-radius:2px;letter-spacing:.08em}
+.h2row .mode.editing{color:#fff;background:var(--enji);border-color:var(--enji)}
+.editband{position:sticky;top:54px;z-index:4;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  background:#FBEFEF;border:1px solid var(--enji);padding:8px 14px;margin-bottom:12px;font-size:12.5px}
+.editband[hidden]{display:none}
+.editband b#sv-nchg{font-family:var(--display);font-weight:400;font-size:17px}
+.gridbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.gridbar .rc{gap:4px}
+.gridbar input.rcin{width:38px;border:1px solid var(--line);padding:4px 4px;text-align:center;font-size:12.5px;background:#fff}
+.gridbar select:disabled,.gridbar input:disabled{background:#F4F0EA;color:var(--ink2)}
+.seatwrap.pv #sv-canvas .chip,.seatwrap.pv #sv-canvas .tb,.seatwrap.pv #sv-canvas .seat{cursor:default}
+.seatwrap.pv #sv-canvas .cxh,.seatwrap.pv #sv-canvas .cxt,.seatwrap.pv #sv-canvas .tmemo{display:none}
+.seatwrap.pv .srw{cursor:default}
+.seatwrap.pv .srw:hover{background:none;border-color:transparent}
+.previewnote{display:none;margin:0 0 8px}
+.seatwrap.pv .previewnote{display:block}
+.notepanel textarea[readonly]{background:#FBF9F5;color:var(--ink2)}
+.btn:disabled{opacity:.45;cursor:default}

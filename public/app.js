@@ -443,6 +443,7 @@ async function logChange(target_table, target_id, action, reason, diff) {
 /* ============================== 画面切替 ============================== */
 $$('#nav button').forEach(b => b.addEventListener('click', () => go(b.dataset.v)));
 function go(v) {
+  if (seatLeaveGuard(v)) return;              /* 配席の未保存の変更を確認 */
   $$('#nav button').forEach(x => x.classList.toggle('on', x.dataset.v === v));
   $$('.view').forEach(s => s.classList.toggle('on', s.id === 'v-' + v));
   window.scrollTo(0, 0);
@@ -3417,47 +3418,78 @@ $('#b-csv').addEventListener('click', () => {
 /* ============================================================
    配席（Seating）
    会場レイアウトは reference/table_plan.pdf（リーガロイヤルホテル東京 2026-09-26）に準拠。
-   卓は「卓数」から自動レイアウト（最大 3行×4列）。PDF は高砂・入口といった固定物の
-   位置の参考にのみ使う。座標は％で持ち、キャンバス幅に比例して拡縮する。
+   卓は「行数・列数・各行の卓数」のグリッドに置く（grid_row / grid_col）。座標は％で持ち、
+   キャンバス幅に比例して拡縮する。高砂は卓ではなく、上部中央の固定図形。
+   編集はプレビュー／編集モードで、編集中の変更はブラウザ内に保持し「保存」で一括反映する。
    ============================================================ */
 
 /* キャンバスの内部座標系。％→この viewBox に写す */
 const VB = { w: 1400, h: 1000, pad: 24 };
 
-/* ---------------- F. 卓数と自動レイアウト ----------------
-   F3: 行数と各行の卓数は固定。前列（高砂に近い）から順に多く配る。
-   F4: 各行は左右対称にセンタリング。高砂は最前面中央に固定し、行は等間隔。
-   卓の直径は 12 卓時を基準に固定で、卓数が少なくても拡大しない。 */
-const MAX_TABLES = 12;
-const SEATS_PER_TABLE = 10;              // F1 の min 算出、F7 の既定・上限
-const ROW_PLAN = {
-  1: [1], 2: [2], 3: [3], 4: [4],
-  5: [3, 2], 6: [3, 3], 7: [4, 3], 8: [4, 4],
-  9: [3, 3, 3], 10: [4, 3, 3], 11: [4, 4, 3], 12: [4, 4, 4],
-};
-const COL_X = { 1: [50], 2: [33, 67], 3: [25, 50, 75], 4: [12.5, 37.5, 62.5, 87.5] };
-const ROW_GAP = 25, ROW_MID = 59;        // 行間（％）と行ブロックの中心
-const HEAD = { label: '高砂', capacity: 2, shape: 'head', x: 50, y: 10, w: 21.4, h: 5.6, sort_order: 0 };
+/* ---------------- グリッド ---------------- */
+const MAX_ROWS = 4, MAX_COLS = 6, SEATS_PER_TABLE = 10;
+const DEF_LAYOUT = { rows: 3, cols: 4, counts: [4, 4, 4] };
+const DEF_TITLE = '両家結婚披露宴御座席表';
+const ROW_MID = 59, ROW_GAP = 25;        /* 行ブロックの中心（％）と最大の行間 */
+const SHAPES = [['round', '丸卓'], ['rect', '角卓']];
 
-/* 卓数 n のときの各卓の位置（前列・左から順）。戻り値の index が sort_order-1 に対応 */
-function autoLayout(n) {
-  const plan = ROW_PLAN[Math.min(MAX_TABLES, Math.max(1, n))] || [4, 4, 4];
-  const rows = plan.length;
-  const y0 = ROW_MID - (rows - 1) * ROW_GAP / 2;
-  const out = [];
-  plan.forEach((cnt, ri) => {
-    for (const x of COL_X[cnt]) out.push({ x, y: y0 + ri * ROW_GAP });
-  });
-  return out;
+/* event_settings の行数・列数・各行の卓数を正規化して返す */
+function layoutOf(ev = S.ev) {
+  const rows = Math.min(MAX_ROWS, Math.max(1, +ev?.layout_rows || DEF_LAYOUT.rows));
+  const cols = Math.min(MAX_COLS, Math.max(1, +ev?.layout_cols || DEF_LAYOUT.cols));
+  const src = Array.isArray(ev?.row_counts) ? ev.row_counts : DEF_LAYOUT.counts;
+  const counts = [];
+  for (let r = 0; r < rows; r++) {
+    const v = src[r];
+    counts.push(v == null ? cols : Math.min(cols, Math.max(0, +v || 0)));
+  }
+  return { rows, cols, counts };
 }
-const guestTables = () => T.tables.filter(t => t.shape !== 'head')
-  .sort((a, b) => a.sort_order - b.sort_order);
-const headTable = () => T.tables.find(t => t.shape === 'head') || null;
+/* (行, 行内の順番) → 中心座標（％）。各行は左右対称にセンタリング */
+function gridPos(r, c, L = layoutOf()) {
+  const n = L.counts[r] || 0;
+  const pitch = 100 / L.cols;
+  const x = 50 + (c - (n - 1) / 2) * pitch;
+  const gap = L.rows === 1 ? 0 : Math.min(ROW_GAP, 52 / (L.rows - 1));
+  const y0 = ROW_MID - (L.rows - 1) * gap / 2;
+  return { x: +x.toFixed(2), y: +(y0 + r * gap).toFixed(2) };
+}
+/* 行数・列数が多いときは卓を少し小さく描く */
+function layoutScale(L = layoutOf()) {
+  return Math.min(L.rows >= 4 ? 0.76 : 1, L.cols >= 6 ? 0.94 : 1);
+}
+const tableAt = (r, c) => T.tables.find(t => t.grid_row === r && t.grid_col === c) || null;
+/* グリッド順（行→行内）。sort_order もこの順 */
+const orderedTables = () => T.tables.slice()
+  .sort((a, b) => (a.grid_row ?? 99) - (b.grid_row ?? 99) || (a.grid_col ?? 99) - (b.grid_col ?? 99));
+/* 配席できる卓（定員 1 以上） */
+const guestTables = () => orderedTables().filter(t => (t.capacity || 0) > 0);
 /* F1: 参加ゲスト数＝有効な出席回答の reply_people（同行者含む・削除済み除く） */
 const attendCount = () => [...T.pool.values()].filter(p => !p.provisional).length;
-const minTables = () => Math.max(1, Math.ceil(attendCount() / SEATS_PER_TABLE));
-
-const SHAPES = [['round', '丸卓'], ['rect', '角卓'], ['head', '高砂']];
+/* 卓名は自由。新しい卓には未使用の次の記号（数字の卓が主なら次の数字、そうでなければ A, B, …） */
+function nextLabel() {
+  const used = new Set(T.tables.map(t => String(t.label ?? '').trim()));
+  const numeric = T.tables.length && T.tables.every(t => /^\d+$/.test(String(t.label ?? '').trim()));
+  if (numeric) { for (let i = 1; ; i++) if (!used.has(String(i))) return String(i); }
+  for (let i = 0; ; i++) {
+    const s = i < 26 ? String.fromCharCode(65 + i) : String.fromCharCode(65 + Math.floor(i / 26) - 1) + String.fromCharCode(65 + i % 26);
+    if (!used.has(s)) return s;
+  }
+}
+const uuid = () => crypto.randomUUID();
+/* sort_order と x/y（互換用）をグリッドから決め直す */
+function recomputeOrder() {
+  const L = layoutOf();
+  orderedTables().forEach((t, i) => {
+    const p = gridPos(t.grid_row, t.grid_col, L);
+    t.sort_order = i + 1; t.x = p.x; t.y = p.y;
+  });
+}
+function newTable(r, c) {
+  const p = gridPos(r, c);
+  return { id: uuid(), label: nextLabel(), capacity: SEATS_PER_TABLE, shape: 'round', x: p.x, y: p.y,
+           w: null, h: null, rotation: 0, memo: null, sort_order: 0, grid_row: r, grid_col: c };
+}
 
 const T = {
   tables: [], asg: [],
@@ -3465,37 +3497,35 @@ const T = {
   asgByPerson: new Map(),      // 'type:id' → assignment
   pool: new Map(),             // 'type:id' → 配席できる人
   peopleById: new Map(),
-  lock: true, folded: false, sel: null, drag: null, view: 'round',
+  folded: false, sel: null, drag: null, view: 'round',
   q: '', sideF: '', circle: '', sort: 'circle',
   open: { un: true, na: true },
   loaded: false,
+  edit: false, base: null, since: null, saving: false,   /* C: 編集モード */
 };
 const pkey = (type, id) => type + ':' + id;
 
 /* ---------------- 読み込み ---------------- */
-async function loadSeating() {
+async function fetchSeatingRows() {
   const [t, a] = await Promise.all([
     sb.from('seating_tables').select('*').order('sort_order'),
     sb.from('seating_assignments').select('*'),
   ]);
-  if (t.error || a.error) {
-    toast('配席の読み込みに失敗：' + (t.error || a.error).message, 'err');
-    return;
-  }
+  if (t.error || a.error) { toast('配席の読み込みに失敗：' + (t.error || a.error).message, 'err'); return false; }
   T.tables = t.data || []; T.asg = a.data || [];
-  T.pool = buildPool();                       // ensureTables の min 算出に必要
-  await ensureTables();
-  T.lock = localStorage.getItem('seatLock') !== '0';
-  T.snap = localStorage.getItem('seatSnap') !== '0';
+  return true;
+}
+async function loadSeating() {
+  if (!await fetchSeatingRows()) return;
   T.folded = localStorage.getItem('seatFold') === '1';
   T.view = localStorage.getItem('seatView') === 'list' ? 'list' : 'round';
-  $('#sv-lock').checked = T.lock;
-  $('#sv-snap').checked = T.snap;
   $('#sv-note').value = S.ev?.seating_note || '';       /* C1: 全体の申し送り */
+  T.pool = buildPool();
+  await migrateSeating();          /* 旧データ（高砂の行・座標のみの卓）をグリッドへ（一度だけ） */
   T.loaded = true;
-  await reconcileSeating();
   indexSeating();
-  await backfillSeats();          /* B1: seat_index が null の割当に採番（一度だけ） */
+  await reconcileSeating();
+  await backfillSeats();           /* B1: seat_index が null の割当に採番（一度だけ） */
 }
 function indexSeating() {
   T.peopleById = new Map(S.people.map(p => [p.id, p]));
@@ -3509,8 +3539,83 @@ function indexSeating() {
   for (const arr of T.byTable.values())
     arr.sort((x, y) => (x.seat_index ?? 99) - (y.seat_index ?? 99));
 }
+async function reloadSeating() {
+  if (!await fetchSeatingRows()) return;
+  await loadEventSettings();
+  $('#sv-note').value = S.ev?.seating_note || '';
+  indexSeating(); renderSeating();
+}
 
-/* D2: 未回答で仮配席していた人に回答が届いていたら、本人の reply_people の割当に置き換える */
+/* 旧データの移行：高砂の行は削除し、grid_row/grid_col の無い卓は sort_order 順にグリッドへ置く。
+   グリッドに空きがあれば空の卓を足し、収まらない卓があれば行数・列数を広げる。DB へは一度だけ書く */
+async function migrateSeating() {
+  const heads = T.tables.filter(t => t.shape === 'head');
+  if (heads.length) {
+    const ids = heads.map(t => t.id);
+    T.tables = T.tables.filter(t => !ids.includes(t.id));
+    T.asg = T.asg.filter(a => !ids.includes(a.table_id));
+    const { error } = await sb.from('seating_tables').delete().in('id', ids);
+    if (error) toast('高砂の行の削除に失敗：' + error.message, 'err');
+  }
+  const ev0 = S.ev || {};
+  let L = layoutOf(ev0);
+  const evPatch = {};
+  if (ev0.layout_rows == null || ev0.layout_cols == null || !Array.isArray(ev0.row_counts)) {
+    Object.assign(evPatch, { layout_rows: L.rows, layout_cols: L.cols, row_counts: L.counts });
+  }
+  const missing = T.tables.filter(t => t.grid_row == null || t.grid_col == null
+    || t.grid_row >= L.rows || t.grid_col >= (L.counts[t.grid_row] || 0));
+  const patches = [];
+  if (missing.length) {
+    /* 全卓が収まるように行数・列数を広げる */
+    const n = T.tables.length;
+    let { rows, cols, counts } = L;
+    while (counts.reduce((a, b) => a + b, 0) < n) {
+      const r = counts.findIndex(c => c < cols);
+      if (r >= 0) counts[r]++;
+      else if (rows < MAX_ROWS) { rows++; counts.push(1); }
+      else if (cols < MAX_COLS) { cols++; }
+      else break;
+    }
+    L = { rows, cols, counts };
+    Object.assign(evPatch, { layout_rows: rows, layout_cols: cols, row_counts: counts });
+    const taken = new Set(T.tables.filter(t => !missing.includes(t))
+      .map(t => `${t.grid_row},${t.grid_col}`));
+    const free = [];
+    for (let r = 0; r < rows; r++) for (let c = 0; c < counts[r]; c++)
+      if (!taken.has(`${r},${c}`)) free.push([r, c]);
+    for (const t of missing.slice().sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))) {
+      const [r, c] = free.shift() || [0, 0];
+      t.grid_row = r; t.grid_col = c;
+    }
+  }
+  if (Object.keys(evPatch).length) {
+    Object.assign(S.ev, evPatch);
+    const { error } = await sb.from('event_settings').upsert({ id: 1, ...evPatch }, { onConflict: 'id' });
+    if (error) toast('レイアウト設定の保存に失敗：' + error.message, 'err');
+  }
+  /* 空いている位置に空の卓を足す */
+  const adds = [];
+  for (let r = 0; r < L.rows; r++) for (let c = 0; c < L.counts[r]; c++)
+    if (!tableAt(r, c)) { const t = newTable(r, c); T.tables.push(t); adds.push(t); }
+  recomputeOrder();
+  for (const t of [...missing, ...adds]) patches.push(t);
+  if (!patches.length) return;
+  /* 一意制約 (grid_row, grid_col) に当たらないよう、動かす卓の位置をいったん外してから書く */
+  const movedIds = missing.map(t => t.id);
+  if (movedIds.length) await sb.from('seating_tables').update({ grid_row: null, grid_col: null }).in('id', movedIds);
+  const { error } = await sb.from('seating_tables').upsert(patches.map(tableRow), { onConflict: 'id' });
+  if (error) toast('卓のグリッド移行に失敗：' + error.message, 'err');
+  else toast(`卓の配置をグリッドに移行しました（${missing.length} 卓を配置、${adds.length} 卓を追加）`, 'ok');
+}
+/* DB に書く卓の行（余計なプロパティを落とす） */
+const tableRow = t => ({ id: t.id, label: t.label, capacity: t.capacity, shape: t.shape, x: t.x, y: t.y,
+  w: t.w ?? null, h: t.h ?? null, rotation: t.rotation || 0, memo: t.memo ?? null,
+  sort_order: t.sort_order, grid_row: t.grid_row, grid_col: t.grid_col });
+const asgRow = a => ({ id: a.id, table_id: a.table_id, seat_index: a.seat_index ?? null,
+  person_type: a.person_type, person_id: a.person_id, provisional: !!a.provisional });
+
+/* D2: 未回答で仮配席していた人に回答が届いていたら、本人の reply_people の割当に置き換える（読み込み時） */
 async function reconcileSeating() {
   const ups = [];
   for (const a of T.asg) {
@@ -3605,11 +3710,10 @@ function staleWhy(a) {
 }
 const staleAsg = () => T.asg.filter(a => !T.pool.has(pkey(a.person_type, a.person_id)));
 
-/* ---------------- 幾何 ---------------- */
 /* ---------------- B. 卓内の席（seat_index 0〜capacity-1） ---------------- */
 function seatSlots(tb) {
   const list = T.byTable.get(tb.id) || [];
-  const cap = Math.max(1, tb.capacity || 1);
+  const cap = Math.max(0, tb.capacity || 0);
   const seats = new Array(cap).fill(null);
   const extra = [];
   for (const a of list) {
@@ -3631,7 +3735,7 @@ const runIn = (taken, n) => {
 };
 const freeRun = (tb, n) => runIn(seatSlots(tb).seats.map(Boolean), n);
 
-/* B1: seat_index が null の割当に、卓ごとに 0 から順に採番して保存する（一度だけ） */
+/* B1: seat_index が null の割当に、卓ごとに 0 から順に採番して保存する（読み込み時に一度だけ） */
 async function backfillSeats() {
   const ups = [];
   for (const tb of T.tables) {
@@ -3659,10 +3763,10 @@ async function backfillSeats() {
 /* ---------------- 幾何（表示形式で変わる） ---------------- */
 const LIST_HALF = 150, LIST_ROWH = 26;
 function tableGeom(tb) {
-  if (tb.shape !== 'round') {
-    return { mode: 'box',
-      w: tb.w ? tb.w * VB.w / 100 : (tb.shape === 'head' ? 300 : 220),
-      h: tb.h ? tb.h * VB.h / 100 : (tb.shape === 'head' ? 56 : 90) };
+  const s = layoutScale();
+  if ((tb.capacity || 0) <= 0) return { mode: 'zero', r: 34 * s };   /* B6: 定員0＝卓名だけの円 */
+  if (tb.shape === 'rect') {
+    return { mode: 'box', w: tb.w ? tb.w * VB.w / 100 : 220, h: tb.h ? tb.h * VB.h / 100 : 90 };
   }
   const cap = Math.max(1, tb.capacity || 1);
   if (T.view === 'list') {
@@ -3671,8 +3775,7 @@ function tableGeom(tb) {
     return { mode: 'list', r: EX.guest ? 0 : 21, rowH: LIST_ROWH,
              half: EX.guest ? 168 : LIST_HALF, rowsL, rowsR: cap - rowsL };
   }
-  /* F4: 直径は 12 卓・定員 10 のときを基準に固定 */
-  return { mode: 'round', r: 54, Rs: 70 };
+  return { mode: 'round', r: 54 * s, Rs: 70 * s };
 }
 /* B4: 席 0 は高砂に最も近い席（上）。そこから時計回り。両表示で同じ順序 */
 function seatPos(tb, i, cap, g) {
@@ -3686,9 +3789,10 @@ function seatPos(tb, i, cap, g) {
     const k = left ? i : i - g.rowsL;
     return { left, y: -(n - 1) * g.rowH / 2 + k * g.rowH };
   }
-  const step = g.w / (cap + 1);                 /* 高砂・角卓は箱の上に並べる */
+  const step = g.w / (cap + 1);                 /* 角卓は箱の上に並べる */
   return { x: -g.w / 2 + step * (i + 1), y: -g.h / 2 - 13, c: 0 };
 }
+const tableCenter = tb => ({ cx: tb.x * VB.w / 100, cy: tb.y * VB.h / 100 });
 
 /* プールの人は famL / givL で持つ（reply_people / guests の生の行とは別形） */
 const latinOf = p => `${p?.famL ?? ''} ${p?.givL ?? ''}`.trim();
@@ -3709,7 +3813,7 @@ function nameLines(p, a) {
   if ([...full].length <= 5) return [full];
   return giv ? [fam || full, giv] : [full];
 }
-/* D2: ゲスト向けの名前チップ（高砂など、表形式にならない卓で使う）。「姓名 様」 */
+/* D2: ゲスト向けの名前チップ（表形式にならない卓で使う）。「姓名 様」 */
 function guestChipLines(p, a) {
   const { fam, giv } = nameParts(p, a);
   const full = (fam + giv).trim();
@@ -3745,8 +3849,6 @@ function chipMeta(a) {
   return { p, stale, prov, child, warn, tip, cls:
     ['chip', prov && !EX.guest ? 'prov' : '', stale ? 'stale' : ''].filter(Boolean).join(' ') };
 }
-
-
 /* ---------------- C3: 名前の横のマーク（管理用） ----------------
    すべて単色のインラインSVGピクトグラム。絵文字・画像ファイルは使わない。
    14×14 の座標系で描き、表示サイズに合わせて scale する。線は 1.4px・角は丸め。 */
@@ -3823,7 +3925,6 @@ function legendSVG(x, y) {
 /* 書き出しの設定。canvasSVG がこの値を見て名前枠の中身を変える */
 const EX = { titles: false, guest: false, notesMax: Infinity, rest: [], h: VB.h };
 let EXPORTING = false;
-
 /* ---------------- SVG ---------------- */
 /* PNG 書き出し（Canvas）でも同じ見た目になるよう、CSS は SVG の中に持たせる */
 const SEAT_CSS = `
@@ -3834,7 +3935,16 @@ text{font-family:-apple-system,"Hiragino Sans","Yu Gothic",Helvetica,Arial,sans-
 .fx{font-size:13px;fill:#9C9288;letter-spacing:.18em;text-anchor:middle}
 .fxv{writing-mode:vertical-rl;text-orientation:upright}
 .tbody{fill:#fff;stroke:#C9C1B7;stroke-width:1.6}
-.tb.head .tbody{fill:#F4EFE7;stroke:#8C6E5E}
+.hbody{fill:#F4EFE7;stroke:#8C6E5E;stroke-width:1.6}
+.hlabel{font-family:Georgia,"Hiragino Mincho ProN",serif;font-size:14px;letter-spacing:.2em;text-anchor:middle;fill:#8C6E5E}
+.hrole{font-size:9.5px;fill:#6F665E;letter-spacing:.1em;writing-mode:vertical-rl;text-orientation:upright;text-anchor:start}
+.hname{font-family:"Hiragino Mincho ProN","Yu Mincho",Georgia,serif;font-size:17px;letter-spacing:.12em;fill:#2B2B2B;writing-mode:vertical-rl;text-orientation:upright;text-anchor:start}
+.hfam{font-family:"Hiragino Mincho ProN","Yu Mincho",Georgia,serif;font-size:24px;fill:#2B2B2B}
+.htitle{font-family:"Hiragino Mincho ProN","Yu Mincho",Georgia,serif;font-size:30px;letter-spacing:.16em;fill:#2B2B2B}
+.hinfo{font-size:11.5px;fill:#6F665E;letter-spacing:.06em}
+.tb.zero .tbody{fill:#F7F4EF;stroke:#C9C1B7;stroke-dasharray:4 3}
+.tlabel.zl{font-size:15px}
+.tb.hov .thit{fill-opacity:.06}
 .tb.over .tbody{stroke:#8E1728;stroke-width:2.6}
 .tb.hov .tbody{stroke:#2B2B2B;stroke-width:2.6;fill:#F6F1E9}
 .tb.pick .tbody{stroke:#7FA5D6;stroke-width:3.4;fill:#F3F7FC}
@@ -3908,34 +4018,71 @@ const SEAT_CSS_UI = `
 #sv-canvas .tb.drag{opacity:.75}
 `;
 
-/* D3: ゲスト向け座席表の見出し。新郎新婦の名前は event_settings（A3） */
+/* 見出しの日付・会場（右上に小さく） */
 const HEAD_DATE = '2026年9月26日', HEAD_VENUE = 'リーガロイヤルホテル東京 ロイヤルホール';
 function guestHead() {
-  const { g, b } = coupleNames();
-  return [HEAD_DATE, [g, b].filter(Boolean).join('・'), HEAD_VENUE].filter(Boolean);
+  const { gf, gg, bf, bg } = coupleNames();
+  const names = [[gf, gg].filter(Boolean).join(' '), [bf, bg].filter(Boolean).join(' ')].filter(Boolean).join('・');
+  return [HEAD_DATE, names, HEAD_VENUE].filter(Boolean);
 }
 
-/* B1: 出入口は右の壁の下寄り（中心 y と開口の半分の長さ、VB 座標） */
+/* B7: 出入口は右の壁の下寄り（中心 y と開口の半分の長さ、VB 座標） */
 const DOOR_H = 52, DOOR_Y = VB.h - VB.pad - 62;
-const doorRect = () => ({ x1: VB.w - VB.pad - 28, y1: DOOR_Y - DOOR_H - 12, x2: VB.w, y2: DOOR_Y + DOOR_H + 12 });
+
+/* A3: 左上の見出し。両家の姓を縦に2段（上＝新郎の姓を中央寄せ、下＝新婦の姓を字間を広げて左右いっぱいに）、
+   その右に座席表タイトルを明朝で大きく */
+function headerSVG() {
+  const { gf, bf } = coupleNames();
+  const title = (S.ev?.chart_title || '').trim() || DEF_TITLE;
+  const P = VB.pad, fs = 24, x0 = P + 22, y0 = P + 10;
+  const len = Math.max(3, [...gf].length, [...bf].length);   /* 2文字の姓は「吉　永」のように1字あけて広げる */
+  const W0 = len * fs;
+  let s = `<g class="hdr">`;
+  if (gf) s += `<text class="hfam" x="${x0 + W0 / 2}" y="${y0 + fs}" text-anchor="middle">${esc(gf)}</text>`;
+  if (bf) s += [...bf].length > 1
+    ? `<text class="hfam" x="${x0}" y="${y0 + fs * 2 + 8}" textLength="${W0}" lengthAdjust="spacing">${esc(bf)}</text>`
+    : `<text class="hfam" x="${x0 + W0 / 2}" y="${y0 + fs * 2 + 8}" text-anchor="middle">${esc(bf)}</text>`;
+  const tx = x0 + (gf || bf ? W0 + 24 : 0);
+  s += `<text class="htitle" x="${tx}" y="${y0 + fs * 1.5 + 6}">${esc(title)}</text>`;
+  return s + '</g>';
+}
+/* A1・A2: 高砂は卓ではなく固定の図形。上部中央に置き、新郎（左）・新婦（右）の「名」を縦書きで、
+   その上に小さく「新郎」「新婦」。姓は出さない */
+const HEAD_BOX = { cx: 50, cy: 11.5, w: 300, h: 112 };
+function headSVG() {
+  const { gg, bg } = coupleNames();
+  const cx = HEAD_BOX.cx * VB.w / 100, cy = HEAD_BOX.cy * VB.h / 100, w = HEAD_BOX.w, h = HEAD_BOX.h;
+  const top = cy - h / 2;
+  const col = (x, role, name) =>
+    `<text class="hrole" x="${x}" y="${top + 9}">${role}</text>`
+    + `<text class="hname" x="${x}" y="${top + 36}">${esc(name || '—')}</text>`;
+  return `<g class="takasago">`
+    + `<rect class="hbody" x="${cx - w / 2}" y="${top}" width="${w}" height="${h}" rx="3"/>`
+    + `<text class="hlabel" x="${cx}" y="${cy + 5}">高砂</text>`
+    + col(cx - 74, '新郎', gg) + col(cx + 74, '新婦', bg)
+    + `</g>`;
+}
+const headRect = () => {
+  const cx = HEAD_BOX.cx * VB.w / 100, cy = HEAD_BOX.cy * VB.h / 100;
+  return { x1: cx - HEAD_BOX.w / 2, y1: cy - HEAD_BOX.h / 2, x2: cx + HEAD_BOX.w / 2, y2: cy + HEAD_BOX.h / 2 };
+};
 
 function canvasSVG(forExport) {
   EXPORTING = !!forExport;
   const P = VB.pad, W = VB.w, H = VB.h;
-  const top = EX.guest ? 46 : 0;                 /* D3: 見出しのぶん会場図を下げる */
-  let body = `<rect class="hall" x="${P}" y="${P + top}" width="${W - P * 2}" height="${H - P * 2 - top}" rx="6"/>`;
-  /* B1: 出入口は会場図の右側面・下寄り。右の壁を切り、扉の弧と「出入口」を添える */
+  let body = `<rect class="hall" x="${P}" y="${P}" width="${W - P * 2}" height="${H - P * 2}" rx="6"/>`;
+  /* B7: 出入口は会場図の右側面・下寄り。右の壁を切り、扉の弧と「出入口」を添える */
   const dh = DOOR_H, dx = W - P, dy = DOOR_Y;
   body += `<g class="doorg">`
        +  `<line class="door" x1="${dx}" y1="${dy - dh}" x2="${dx}" y2="${dy + dh}"/>`
        +  `<path class="doorl" d="M${dx} ${dy - dh} v${dh * 2}"/>`
        +  `<path class="doorl" d="M${dx} ${dy + dh} a${dh * 2.2} ${dh * 2.2} 0 0 1 -7 ${-dh * 2}"/>`
        +  `<text class="fx fxv" x="${dx + 12}" y="${dy}">出入口</text></g>`;
-  if (EX.guest) {
-    body += `<text class="ghead" x="${W / 2}" y="${P + 24}">${esc(guestHead().join('　／　'))}</text>`;
-  }
-  const inner = T.tables.map(tableSVG).join('');
-  body += top ? `<g transform="translate(0,${top})">${inner}</g>` : inner;
+  body += headerSVG() + headSVG();
+  /* 右上に日付と会場 */
+  body += `<text class="hinfo" x="${W - P - 14}" y="${P + 26}" text-anchor="end">${esc(HEAD_DATE)}</text>`
+       +  `<text class="hinfo" x="${W - P - 14}" y="${P + 46}" text-anchor="end">${esc(HEAD_VENUE)}</text>`;
+  body += orderedTables().map(tableSVG).join('');
   /* C3: 管理用は会場図の下に「申し送り事項」（左）と凡例（右）の帯を足す。
      帯の高さは内容で決め、EX.notesMax を超えるぶんは EX.rest に残す（PDF の2ページ目） */
   let H2 = H;
@@ -3956,7 +4103,6 @@ function canvasSVG(forExport) {
   EXPORTING = false;
   return out;
 }
-
 /* ---------------- C3: 申し送り事項（管理用座席表の左下） ---------------- */
 const NOTE_FS = 11, NOTE_LH = 16, NOTE_TAG_W = 60, NOTE_COL_GAP = 28;
 const NOTES_ONE_COL_MAX = 220;     /* 1列でこの高さを超えたら2列にする */
@@ -4070,12 +4216,17 @@ function notesPageSVG(rest) {
 function tableSVG(tb) {
   const { seats, cap, extra, used, over } = seatSlots(tb);
   const g = tableGeom(tb);
-  const cx = tb.x * VB.w / 100, cy = tb.y * VB.h / 100;
-  const cls = ['tb', tb.shape, g.mode === 'list' ? 'list' : '', over ? 'over' : '',
+  const { cx, cy } = tableCenter(tb);
+  const cls = ['tb', tb.shape, g.mode === 'list' ? 'list' : '', g.mode === 'zero' ? 'zero' : '', over ? 'over' : '',
     (BK.on && BK.tables.has(tb.id)) || (SW.on && SW.tables.includes(tb.id)) ? 'pick' : ''].filter(Boolean).join(' ');
   let s = `<g class="${cls}" data-id="${esc(tb.id)}" transform="translate(${cx.toFixed(1)},${cy.toFixed(1)})">`;
 
-  if (g.mode === 'round') {
+  if (g.mode === 'zero') {
+    /* B6: 定員0の卓（物置き・ケーキ卓など）は卓名だけの小さな円。席も名前欄も描かない */
+    s += `<circle class="thit" r="${g.r + 10}" pointer-events="all"/>`
+      +  `<circle class="tbody" r="${g.r}"/>`
+      +  `<text class="tlabel zl" y="6">${esc(tb.label)}</text>`;
+  } else if (g.mode === 'round') {
     s += `<circle class="thit" r="${g.Rs + 14}" pointer-events="all"/>`
       +  `<circle class="tbody" r="${g.r}"/>`
       +  `<text class="tlabel" y="-1">${esc(tb.label)}</text>`
@@ -4090,25 +4241,15 @@ function tableSVG(tb) {
         + `<text class="thead" y="${-h / 2 - 12}">${esc(kindHead(tb))}　${used} / ${cap}</text>`;
   } else {
     s += `<rect class="thit" x="${-g.w / 2 - 10}" y="${-g.h / 2 - 46}" width="${g.w + 20}" height="${g.h + 58}" pointer-events="all"/>`
-      +  `<rect class="tbody" x="${-g.w / 2}" y="${-g.h / 2}" width="${g.w}" height="${g.h}" rx="3"/>`;
-    if (tb.shape === 'head') {
-      /* A2: 高砂に向かって左が新郎、右が新婦（ホテルPDFと同じ並び） */
-      const { g: gn, b: bn } = coupleNames();
-      s += `<text class="tlabel" y="-3">${esc(tb.label)}</text>`
-        +  `<text class="tname" x="${-g.w / 2 + 12}" y="18">新郎 <tspan font-weight="600">${esc(gn || '—')}</tspan></text>`
-        +  `<text class="tname" x="${g.w / 2 - 12}" y="18" text-anchor="end">新婦 <tspan font-weight="600">${esc(bn || '—')}</tspan></text>`
-        +  (EX.guest ? '' : `<text class="tcount" y="18">${used} / ${cap}</text>`);
-    } else {
-      s += `<text class="tlabel" y="2">${esc(tb.label)}</text>`
-        +  (EX.guest ? '' : `<text class="tcount" y="19">${used} / ${cap}</text>`);
-    }
+      +  `<rect class="tbody" x="${-g.w / 2}" y="${-g.h / 2}" width="${g.w}" height="${g.h}" rx="3"/>`
+      +  `<text class="tlabel" y="2">${esc(tb.label)}</text>`
+      +  (EX.guest ? '' : `<text class="tcount" y="19">${used} / ${cap}</text>`);
   }
 
-  /* 卓メモ。編集用の印なので書き出しには出さない */
-  /* 表形式では中央の円の真上（名前の列にかからない位置）に置く */
+  /* 卓メモ。編集用の印なので書き出しには出さない。表形式では中央の円の真上に置く */
   if (!EXPORTING) {
-    const mx = g.mode === 'round' ? g.r * 0.52 : g.mode === 'list' ? 0 : g.w / 2 - 13;
-    const my = g.mode === 'round' ? -g.r * 0.52 : g.mode === 'list' ? -g.r - 13 : -g.h / 2 + 15;
+    const mx = g.mode === 'round' ? g.r * 0.52 : g.mode === 'zero' ? g.r * 0.7 : g.mode === 'list' ? 0 : g.w / 2 - 13;
+    const my = g.mode === 'round' ? -g.r * 0.52 : g.mode === 'zero' ? -g.r * 0.7 : g.mode === 'list' ? -g.r - 13 : -g.h / 2 + 15;
     s += `<g class="tmemo${tb.memo ? ' has' : ''}" data-memo="${esc(tb.id)}" transform="translate(${mx.toFixed(1)},${my.toFixed(1)})">`
       +  `<title>${esc(tb.memo ? `メモ：${tb.memo}` : 'メモを追加')}</title>`
       +  `<circle r="10" fill="#fff" fill-opacity="0" pointer-events="all"/><text y="4.5">📝</text></g>`;
@@ -4116,8 +4257,8 @@ function tableSVG(tb) {
 
   for (let i = 0; i < cap; i++) s += seatSVG(tb, i, seats[i], cap, g);
   /* 定員から外れてしまった割当（定員を減らしたあとなど）は卓の下に並べる */
-  extra.forEach((a, k) => { s += `<g class="seatgrp">` + chipSVG(a, 0, (g.mode === 'list' ? 1 : 1) *
-    ((g.mode === 'round' ? g.Rs + 26 : 60) + k * 26), 'c', tb, null) + `</g>`; });
+  extra.forEach((a, k) => { s += `<g class="seatgrp">` + chipSVG(a, 0,
+    ((g.mode === 'round' ? g.Rs + 26 : g.mode === 'zero' ? g.r + 22 : 60) + k * 26), 'c', tb, null) + `</g>`; });
   return s + '</g>';
 }
 /* C3: 卓の上の見出し */
@@ -4255,17 +4396,20 @@ function renderSeating() {
   const stb = $('#sv-stale');
   stb.hidden = !stale.length;
   if (stale.length) stb.querySelector('b').textContent = stale.length;
-  const gs = guestTables(), hd = headTable();
+  /* B6: 定員0の卓は卓数・定員の集計から外す */
+  const gs = guestTables(), zero = T.tables.length - gs.length;
   $('#sv-venue').textContent = `リーガロイヤルホテル東京｜ゲスト卓 ${gs.length} 卓・`
     + `定員 ${gs.reduce((n, t) => n + (t.capacity || 0), 0)} 名`
-    + (hd ? `（＋${hd.label} ${hd.capacity} 名）` : '');
+    + (zero ? `（＋定員0の卓 ${zero}）` : '');
 
-  renderCountBar();
+  renderGridBar();
+  renderEditBar();
   renderSwapBar();
   $$('#sv-view button').forEach(b => b.classList.toggle('on', b.dataset.v === T.view));
   $('#sv-bulk').classList.toggle('on', BK.on);
   $('#sv-bulk').textContent = BK.on ? '一括配席をやめる' : '一括配席';
   $('#sv-wrap').classList.toggle('bulkmode', BK.on);
+  $('#sv-wrap').classList.toggle('pv', !T.edit);
   $('#sv-box').innerHTML = canvasSVG(false);
   renderSeatSide();
   $('#sv-wrap').classList.toggle('folded', T.folded);
@@ -4273,6 +4417,51 @@ function renderSeating() {
   $('#sv-fold').textContent = T.folded ? 'サイドバーを表示' : 'サイドバーを隠す';
 }
 
+/* 上部バーの行数・列数・各行の卓数と「1卓あたり平均」 */
+function renderGridBar() {
+  const L = layoutOf();
+  const opt = (n, cur) => Array.from({ length: n }, (_, i) => i + 1)
+    .map(i => `<option value="${i}"${i === cur ? ' selected' : ''}>${i}</option>`).join('');
+  const dis = T.edit ? '' : ' disabled';
+  $('#sv-grid').innerHTML = `
+    <label class="cntbox">行 <select id="sv-rows"${dis}>${opt(MAX_ROWS, L.rows)}</select></label>
+    <label class="cntbox">列 <select id="sv-cols"${dis}>${opt(MAX_COLS, L.cols)}</select></label>
+    <span class="cntbox rc">各行の卓数 ${L.counts.map((c, r) =>
+      `<input type="number" class="rcin" data-r="${r}" min="0" max="${L.cols}" value="${c}" title="${r + 1}行目"${dis}>`).join('')}</span>`;
+  $('#sv-rows').addEventListener('change', e => changeGrid({ rows: +e.target.value }));
+  $('#sv-cols').addEventListener('change', e => changeGrid({ cols: +e.target.value }));
+  $$('#sv-grid .rcin').forEach(inp => inp.addEventListener('change', () => {
+    const counts = L.counts.slice();
+    counts[+inp.dataset.r] = Math.min(L.cols, Math.max(0, +inp.value || 0));
+    changeGrid({ counts });
+  }));
+  const gs = guestTables(), att = attendCount();
+  /* B5・B6: 平均も不足席数も、定員 1 以上の卓の capacity 合計から出す */
+  const capSum = gs.reduce((n, t) => n + (t.capacity || 0), 0);
+  const short = Math.max(0, att - capSum);
+  $('#sv-avg').textContent = gs.length
+    ? `1卓あたり平均 ${(capSum / gs.length).toFixed(1)} 席`
+    : '1卓あたり平均 — 席';
+  $('#sv-min').textContent = `定員合計 ${capSum} 席／出席 ${att} 名／`
+    + (short ? `不足 ${short} 席` : '不足なし');
+  $('#sv-min').classList.toggle('short', short > 0);
+}
+
+/* C2: 編集中の帯と、モードで変わるボタンの状態 */
+function renderEditBar() {
+  const n = T.edit ? seatDiff().count : 0;
+  const band = $('#sv-editband');
+  band.hidden = !T.edit;
+  $('#sv-nchg').textContent = n;
+  $('#sv-save').disabled = T.saving;
+  $('#sv-discard').disabled = T.saving;
+  $('#sv-edit').hidden = T.edit;
+  $('#sv-mode').textContent = T.edit ? '編集モード' : 'プレビュー';
+  $('#sv-mode').classList.toggle('editing', T.edit);
+  for (const id of ['sv-bulk', 'sv-swap']) $('#' + id).disabled = !T.edit;
+  $('#sv-note').readOnly = !T.edit;
+  $('#sv-notehint').textContent = T.edit ? '編集中（保存で反映）' : '編集モードで書き換えられます';
+}
 function seatRowHTML(p, indent) {
   const nm = `${p.fam ?? ''} ${p.giv ?? ''}`.trim() || latinOf(p) || '（無名）';
   const lat = latinOf(p).toUpperCase();
@@ -4357,218 +4546,351 @@ function renderSeatSide() {
   $('#sv-unsel').addEventListener('click', () => { T.sel = null; renderSeatSide(); });
 }
 
-/* ---------------- 保存（すべて即時保存。change_log の対象外） ---------------- */
-async function reloadSeating() {
-  const [t, a] = await Promise.all([
-    sb.from('seating_tables').select('*').order('sort_order'),
-    sb.from('seating_assignments').select('*'),
-  ]);
-  if (!t.error) T.tables = t.data || [];
-  if (!a.error) T.asg = a.data || [];
-  indexSeating(); renderSeating();
+/* ============================================================
+   C. プレビュー／編集モード
+   編集中の変更はすべてブラウザ内（T.tables / T.asg / S.ev）に持ち、「保存」で差分をまとめて書く。
+   ============================================================ */
+const TB_F = ['label', 'capacity', 'shape', 'memo', 'sort_order', 'grid_row', 'grid_col'];
+const AS_F = ['table_id', 'seat_index', 'person_type', 'person_id', 'provisional'];
+const EV_F = ['seating_note', 'layout_rows', 'layout_cols', 'row_counts'];
+const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
+function snapshot() {
+  return { tables: T.tables.map(t => ({ ...t })), asg: T.asg.map(a => ({ ...a })),
+           ev: { ...(S.ev || {}), row_counts: Array.isArray(S.ev?.row_counts) ? [...S.ev.row_counts] : null } };
 }
-async function seatWrite(run, failMsg) {
-  const { error } = await run();
-  if (error) { toast(failMsg + '：' + error.message, 'err'); await reloadSeating(); return false; }
+/* 編集前の状態との差分 */
+function seatDiff() {
+  const b = T.base || snapshot();
+  const bt = new Map(b.tables.map(t => [t.id, t])), ct = new Map(T.tables.map(t => [t.id, t]));
+  const ba = new Map(b.asg.map(a => [a.id, a])), ca = new Map(T.asg.map(a => [a.id, a]));
+  const delTables = [...bt.keys()].filter(id => !ct.has(id));
+  const upTables = T.tables.filter(t => !bt.has(t.id) || TB_F.some(k => !same(t[k], bt.get(t.id)[k])));
+  const delAsg = [...ba.keys()].filter(id => !ca.has(id) && !delTables.includes(ba.get(id).table_id));
+  const upAsg = T.asg.filter(a => !ba.has(a.id) || AS_F.some(k => !same(a[k], ba.get(a.id)[k])));
+  const ev = {};
+  for (const k of EV_F) if (!same(S.ev?.[k], b.ev?.[k])) ev[k] = S.ev?.[k] ?? null;
+  const count = delTables.length + upTables.length + delAsg.length + upAsg.length + Object.keys(ev).length;
+  return { delTables, upTables, delAsg, upAsg, ev, count,
+           movedTables: upTables.filter(t => bt.has(t.id)).map(t => t.id),
+           movedAsg: upAsg.filter(a => ba.has(a.id)).map(a => a.id) };
+}
+const hasUnsaved = () => T.edit && seatDiff().count > 0;
+
+/* C6: 各表の updated_at の最大値 */
+async function fetchSince() {
+  const last = async (tbl) => {
+    const { data } = await sb.from(tbl).select('updated_at').order('updated_at', { ascending: false }).limit(1);
+    return data?.[0]?.updated_at || null;
+  };
+  const [tables, asg] = await Promise.all([last('seating_tables'), last('seating_assignments')]);
+  const { data } = await sb.from('event_settings').select('updated_at').eq('id', 1).maybeSingle();
+  return { tables, asg, ev: data?.updated_at || null };
+}
+const newer = (db, mine) => !!db && (!mine || new Date(db) > new Date(mine));
+
+async function enterEdit() {
+  if (T.edit) return;
+  if (!await fetchSeatingRows()) return;
+  await loadEventSettings();
+  $('#sv-note').value = S.ev?.seating_note || '';
+  indexSeating();
+  T.since = await fetchSince();
+  T.base = snapshot();
+  T.edit = true;
+  renderSeating();
+  toast('編集モードです。変更は「保存」で反映されます', 'ok');
+}
+function exitEdit() {
+  T.edit = false; T.base = null; T.since = null;
+  BK.on = false; BK.tables.clear(); SW.on = false; SW.tables = []; T.sel = null; closeSeatPop();
+  renderSeating();
+}
+/* C5: 破棄 */
+function discardEdits() {
+  if (!T.edit) return;
+  const run = () => {
+    const b = T.base;
+    T.tables = b.tables.map(t => ({ ...t })); T.asg = b.asg.map(a => ({ ...a }));
+    S.ev = { ...b.ev };
+    $('#sv-note').value = S.ev?.seating_note || '';
+    indexSeating();
+    exitEdit();
+    toast('変更を破棄しました', 'ok');
+  };
+  const n = seatDiff().count;
+  if (!n) { run(); return; }
+  askSeat('変更を破棄します', `未保存の変更が ${n} 件あります。`, '編集前の状態に戻します。よろしいですか。', run, '破棄する');
+}
+/* C5: 未保存のまま別タブへ移ろうとしたときの確認。true を返すと go() を止める */
+function seatLeaveGuard(v) {
+  if (v === 'seating' || !$('#v-seating').classList.contains('on') || !hasUnsaved()) return false;
+  const box = $('#m-seatask-box');
+  box.innerHTML = `<h3>未保存の変更があります</h3>
+    <p class="note">配席の編集中です。未保存の変更が ${seatDiff().count} 件あります。</p>
+    <p style="margin:14px 0 18px">保存せずに移動すると変更は失われます。</p>
+    <div class="row" style="justify-content:flex-end;margin:0">
+      <button class="btn o" data-close>編集に戻る</button>
+      <button class="btn enji" id="lv-go">保存せずに移動</button></div>`;
+  openModal('m-seatask');
+  wireClose(box);
+  $('#lv-go').addEventListener('click', () => {
+    closeModal('m-seatask');
+    const b = T.base;
+    T.tables = b.tables.map(t => ({ ...t })); T.asg = b.asg.map(a => ({ ...a })); S.ev = { ...b.ev };
+    $('#sv-note').value = S.ev?.seating_note || '';
+    indexSeating(); exitEdit(); go(v);
+  });
   return true;
 }
+window.addEventListener('beforeunload', e => {
+  if (hasUnsaved()) { e.preventDefault(); e.returnValue = ''; }
+});
 
-/* 配席（未配席 → 卓）。同じ人の割当があれば upsert で移動になる */
-async function assignPeople(keys, tableId, seat, quiet) {
+/* C4: 保存。まず RPC（1トランザクション）。無ければ順に実行し、失敗したら再読み込みして差分を再表示 */
+async function saveEdits() {
+  if (!T.edit || T.saving) return;
+  const d = seatDiff();
+  if (!d.count) { exitEdit(); toast('変更はありません', 'ok'); return; }
+  T.saving = true; renderEditBar();
+  const payload = {
+    p_since_tables: T.since?.tables, p_since_asg: T.since?.asg, p_since_ev: T.since?.ev,
+    p_del_tables: d.delTables, p_tables: d.upTables.map(tableRow), p_moved_tables: d.movedTables,
+    p_del_asg: d.delAsg, p_asg: d.upAsg.map(asgRow), p_moved_asg: d.movedAsg,
+    p_ev: Object.keys(d.ev).length ? d.ev : null,
+  };
+  let error = (await sb.rpc('seating_save', payload)).error;
+  if (error && (error.code === 'PGRST202' || /could not find the function|does not exist/i.test(error.message || '')))
+    error = await seqSave(d);
+  T.saving = false;
+  if (error) {
+    if (/seating_conflict/.test(error.message || '') || error.code === '40001') { renderEditBar(); showConflict(); return; }
+    toast('保存に失敗しました：' + (error.message || error), 'err');
+    await reloadAndReapply();
+    return;
+  }
+  await fetchSeatingRows(); await loadEventSettings(); indexSeating();
+  exitEdit();
+  toast(`保存しました（${d.count} 件）`, 'ok');
+}
+/* RPC が無いときの順次実行。一意制約に当たらないよう、動かす行の位置をいったん外してから upsert する */
+async function seqSave(d) {
+  const since = await fetchSince();
+  if (newer(since.tables, T.since?.tables) || newer(since.asg, T.since?.asg) || newer(since.ev, T.since?.ev))
+    return { message: 'seating_conflict' };
+  const steps = [];
+  if (d.delAsg.length) steps.push(() => sb.from('seating_assignments').delete().in('id', d.delAsg));
+  if (d.delTables.length) steps.push(() => sb.from('seating_tables').delete().in('id', d.delTables));
+  if (d.movedTables.length) steps.push(() => sb.from('seating_tables').update({ grid_row: null, grid_col: null }).in('id', d.movedTables));
+  if (d.upTables.length) steps.push(() => sb.from('seating_tables').upsert(d.upTables.map(tableRow), { onConflict: 'id' }));
+  if (d.movedAsg.length) steps.push(() => sb.from('seating_assignments').update({ seat_index: null }).in('id', d.movedAsg));
+  if (d.upAsg.length) steps.push(() => sb.from('seating_assignments').upsert(d.upAsg.map(asgRow), { onConflict: 'id' }));
+  if (Object.keys(d.ev).length) steps.push(() => sb.from('event_settings')
+    .upsert({ id: 1, ...d.ev, updated_at: new Date().toISOString() }, { onConflict: 'id' }));
+  for (const run of steps) { const { error } = await run(); if (error) return error; }
+  return null;
+}
+/* 途中で失敗したとき：DB を読み直し、その上に未保存の差分を載せ直して編集を続けられるようにする */
+async function reloadAndReapply() {
+  const d = seatDiff();
+  if (!await fetchSeatingRows()) return;
+  await loadEventSettings();
+  T.base = snapshot(); T.since = await fetchSince();
+  T.tables = T.tables.filter(t => !d.delTables.includes(t.id));
+  for (const t of d.upTables) { const i = T.tables.findIndex(x => x.id === t.id); if (i >= 0) T.tables[i] = t; else T.tables.push(t); }
+  T.asg = T.asg.filter(a => !d.delAsg.includes(a.id) && !d.delTables.includes(a.table_id));
+  for (const a of d.upAsg) { const i = T.asg.findIndex(x => x.id === a.id); if (i >= 0) T.asg[i] = a; else T.asg.push(a); }
+  Object.assign(S.ev, d.ev);
+  $('#sv-note').value = S.ev?.seating_note || '';
+  indexSeating(); renderSeating();
+  toast('DB を読み直しました。未保存の変更はそのまま残っています', 'err');
+}
+/* C6: 他の人の変更を検知したとき */
+function showConflict() {
+  const box = $('#m-seatask-box');
+  box.innerHTML = `<h3>他の人が変更しています</h3>
+    <p class="note">編集を始めたあとに、別の人が配席を変更しました。</p>
+    <p style="margin:14px 0 18px">再読み込みしてやり直してください。今の変更は保存されません。</p>
+    <div class="row" style="justify-content:flex-end;margin:0">
+      <button class="btn o" data-close>閉じる</button>
+      <button class="btn" id="cf-reload">再読み込み</button></div>`;
+  openModal('m-seatask');
+  wireClose(box);
+  $('#cf-reload').addEventListener('click', () => location.reload());
+}
+const needEdit = () => { if (!T.edit) { toast('プレビューモードです。「編集」を押してから操作してください', 'err'); return true; } return false; };
+
+/* ---------------- 配席の操作（すべてブラウザ内。保存で反映） ---------------- */
+function assignPeople(keys, tableId, seat, quiet) {
+  const tb = T.tables.find(t => t.id === tableId); if (!tb) return;
+  if ((tb.capacity || 0) <= 0) { toast(`「${tb.label}」は定員0の卓なので配席できません`, 'err'); return; }
   const ps = keys.map(k => T.pool.get(k)).filter(Boolean);
-  const tb = T.tables.find(t => t.id === tableId);
-  if (!ps.length || !tb) return;
-  /* B1・B5: 席を指定されたらそこへ。複数人は連続した空席に並べる */
+  if (!ps.length) return;
   let idx;
   if (seat != null && ps.length === 1) idx = [seat];
   else {
     const run = freeRun(tb, ps.length);
     idx = run != null ? ps.map((_, i) => run + i) : freeSeats(tb).slice(0, ps.length);
   }
-  if (idx.length < ps.length) {
-    toast(`「${tb.label}」の空席が ${idx.length} 席しかありません`, 'err'); return;
-  }
-  const rows = ps.map((p, i) => ({
-    table_id: tableId, seat_index: idx[i],
-    person_type: p.type, person_id: p.id, provisional: p.provisional,
-  }));
-  /* 楽観更新 */
-  for (const r of rows) {
-    const cur = T.asgByPerson.get(pkey(r.person_type, r.person_id));
-    if (cur) Object.assign(cur, r);
-    else T.asg.push({ id: 'tmp-' + r.person_type + '-' + r.person_id, ...r });
-  }
-  indexSeating(); renderSeating();
-  const { data, error } = await sb.from('seating_assignments')
-    .upsert(rows, { onConflict: 'person_type,person_id' }).select();
-  if (error) { toast('配席に失敗：' + error.message, 'err'); await reloadSeating(); return; }
-  for (const row of data || []) {
-    const cur = T.asgByPerson.get(pkey(row.person_type, row.person_id));
-    if (cur) Object.assign(cur, row);
-  }
+  const taken = new Set(seatSlots(tb).seats.map((a, i) => a ? i : -1));
+  ps.forEach((p, i) => {
+    const old = T.asgByPerson.get(p.key);
+    if (old) T.asg = T.asg.filter(a => a.id !== old.id);
+    const si = idx[i] != null && !taken.has(idx[i]) ? idx[i] : null;
+    if (si != null) taken.add(si);
+    T.asg.push({ id: uuid(), table_id: tableId, seat_index: si, person_type: p.type, person_id: p.id, provisional: p.provisional });
+  });
   indexSeating(); renderSeating();
   if (!quiet) toast(`${ps.length} 名を「${tb.label}」に配席しました`, 'ok');
 }
-
-/* B2: 未配席の人を特定の席へ。埋まっていればその人を同じ卓の空席へ押し出す */
-async function assignToSeat(key, tid, seat, quiet) {
+/* B2: 席を指定して配席。埋まっていれば先客を同じ卓の空席へ寄せる */
+function assignToSeat(key, tid, seat, quiet) {
   const tb = T.tables.find(t => t.id === tid); if (!tb) return;
+  if ((tb.capacity || 0) <= 0) { toast(`「${tb.label}」は定員0の卓なので配席できません`, 'err'); return; }
   const occ = seatSlots(tb).seats[seat];
   if (occ) {
     const free = freeSeat(tb);
-    if (free == null) { toast(`「${tb.label}」は満席です`, 'err'); return; }
-    if (!await setSeat(occ, tid, free, true)) return;
+    if (free == null) { toast(`「${tb.label}」に空席がありません`, 'err'); return; }
+    setSeat(occ, tid, free);
   }
-  return assignPeople([key], tid, seat, quiet);
+  assignPeople([key], tid, seat, quiet);
 }
-/* B2: 席の移動。ドロップ先が埋まっていれば入れ替え */
-async function moveToSeat(asgId, tid, seat) {
-  const a = T.asg.find(x => x.id === asgId);
-  const tb = T.tables.find(t => t.id === tid);
+function moveToSeat(asgId, tid, seat) {
+  const a = T.asg.find(x => x.id === asgId), tb = T.tables.find(t => t.id === tid);
   if (!a || !tb) return;
+  if ((tb.capacity || 0) <= 0) { toast(`「${tb.label}」は定員0の卓なので配席できません`, 'err'); return; }
   if (a.table_id === tid && a.seat_index === seat) return;
   const occ = seatSlots(tb).seats[seat];
-  if (occ && occ.id === a.id) return;
   const from = T.tables.find(t => t.id === a.table_id);
   const moved = `「${from?.label ?? ''}」${(a.seat_index ?? 0) + 1} → 「${tb.label}」${seat + 1}`;
-  if (!occ) {
-    if (await setSeat(a, tid, seat)) toast(`${moved} に移動しました`, 'ok');
-    return;
-  }
-  if (await swapSeats(a, occ)) toast(`${moved} と席を入れ替えました`, 'ok');
+  if (!occ) { setSeat(a, tid, seat); toast(`${moved} に移動しました`, 'ok'); return; }
+  swapSeats(a, occ); toast(`${moved} と席を入れ替えました`, 'ok');
 }
-/* B2: 卓の円（席以外）にドロップ → 空き最小席へ */
-async function moveToTable(asgId, tid) {
-  const a = T.asg.find(x => x.id === asgId);
-  const tb = T.tables.find(t => t.id === tid);
-  if (!a || !tb) return;
-  if (a.table_id === tid) return;
+function moveToTable(asgId, tid) {
+  const a = T.asg.find(x => x.id === asgId), tb = T.tables.find(t => t.id === tid);
+  if (!a || !tb || a.table_id === tid) return;
+  if ((tb.capacity || 0) <= 0) { toast(`「${tb.label}」は定員0の卓なので配席できません`, 'err'); return; }
   const free = freeSeat(tb);
-  if (free == null) { toast(`「${tb.label}」は満席です`, 'err'); return; }
-  const from = T.tables.find(t => t.id === a.table_id);
-  if (await setSeat(a, tid, free))
-    toast(`「${from?.label ?? ''}」→「${tb.label}」に移動しました`, 'ok');
+  if (free == null) { toast(`「${tb.label}」に空席がありません`, 'err'); return; }
+  setSeat(a, tid, free);
+  toast(`「${tb.label}」席 ${free + 1} に移動しました`, 'ok');
 }
-/* 1件の席を書き換える */
-async function setSeat(a, tid, seat, quiet) {
-  const prev = { table_id: a.table_id, seat_index: a.seat_index };
+function setSeat(a, tid, seat) {
   a.table_id = tid; a.seat_index = seat;
   indexSeating(); renderSeating();
-  const { error } = await sb.from('seating_assignments')
-    .update({ table_id: tid, seat_index: seat }).eq('id', a.id);
-  if (error) {
-    Object.assign(a, prev); indexSeating(); renderSeating();
-    if (!quiet) toast('席の移動に失敗：' + error.message, 'err');
-    await reloadSeating();
-    return false;
-  }
-  return true;
 }
-/* 2人の席を入れ替える。(table_id, seat_index) の一意インデックスに当たらないよう
-   いったん片方の seat_index を null にしてから入れ替える */
-async function swapSeats(a, b) {
+function swapSeats(a, b) {
   const A = { table_id: a.table_id, seat_index: a.seat_index };
-  const B = { table_id: b.table_id, seat_index: b.seat_index };
-  Object.assign(a, B); Object.assign(b, A);
+  a.table_id = b.table_id; a.seat_index = b.seat_index;
+  b.table_id = A.table_id; b.seat_index = A.seat_index;
   indexSeating(); renderSeating();
-  const up = (id, patch) => sb.from('seating_assignments').update(patch).eq('id', id);
-  let e = (await up(a.id, { seat_index: null })).error;
-  if (!e) e = (await up(b.id, A)).error;
-  if (!e) e = (await up(a.id, B)).error;
-  if (e) { toast('席の入れ替えに失敗：' + e.message, 'err'); await reloadSeating(); return false; }
-  return true;
 }
-/* 未配席に戻す */
-async function unseat(asgId, quiet) {
-  const a = T.asg.find(x => x.id === asgId);
-  if (!a) return;
-  const nm = T.pool.get(pkey(a.person_type, a.person_id));
-  const label = nm ? `${nm.fam ?? ''}${nm.giv ?? ''}` : staleName(a);
+function unseat(asgId, quiet) {
+  const a = T.asg.find(x => x.id === asgId); if (!a) return;
+  const p = T.pool.get(pkey(a.person_type, a.person_id));
+  const label = p ? chipLabel(p, a) : staleName(a);
   T.asg = T.asg.filter(x => x.id !== asgId);
   indexSeating(); renderSeating();
-  const ok = await seatWrite(() => sb.from('seating_assignments').delete().eq('id', asgId), '未配席に戻せませんでした');
-  if (ok && !quiet) toast(`${label} を未配席に戻しました`, 'ok');
+  if (!quiet) toast(`${label} を未配席に戻しました`, 'ok');
 }
-/* 卓の位置。B2: 手で動かした卓は pos_locked=true にして、卓数を変えても動かさない */
-const savePos = {};
-function saveTablePos(tb) {
-  clearTimeout(savePos[tb.id]);
-  tb.pos_locked = true;
-  savePos[tb.id] = setTimeout(() => seatWrite(() => sb.from('seating_tables')
-    .update({ x: tb.x, y: tb.y, pos_locked: true }).eq('id', tb.id), '卓の位置を保存できませんでした'), 250);
+/* B5: 空席を末尾から削って席番号を 0 から連番に詰め直す */
+function compactSeats(tb, list) {
+  list.forEach((a, i) => { a.seat_index = i; });
+  indexSeating(); renderSeating();
+  return true;
+}
+const seatedOf = tb => (T.byTable.get(tb.id) || []).slice()
+  .sort((a, b) => (a.seat_index ?? 9999) - (b.seat_index ?? 9999));
+/* 両卓の全配席を席番号ごと交換する */
+function swapTables(aId, bId) {
+  const A = T.tables.find(t => t.id === aId), B = T.tables.find(t => t.id === bId);
+  if (!A || !B || aId === bId) return;
+  const as = seatedOf(A), bs = seatedOf(B);
+  for (const a of as) a.table_id = bId;
+  for (const b of bs) b.table_id = aId;
+  indexSeating(); renderSeating();
+  toast(`「${A.label}」と「${B.label}」の配席を入れ替えました`, 'ok');
+}
+/* B3: 卓の位置（グリッド）を入れ替える。配席は卓と一緒に動く */
+function swapGrid(aId, bId) {
+  const A = T.tables.find(t => t.id === aId), B = T.tables.find(t => t.id === bId);
+  if (!A || !B || aId === bId) return;
+  [A.grid_row, B.grid_row] = [B.grid_row, A.grid_row];
+  [A.grid_col, B.grid_col] = [B.grid_col, A.grid_col];
+  recomputeOrder();
+  renderSeating();
+  toast(`「${A.label}」と「${B.label}」の位置を入れ替えました`, 'ok');
+}
+function saveTablePatch(tb, patch, msg) {
+  Object.assign(tb, patch);
+  closeModal('m-table');
+  renderSeating();
+  toast(msg || `「${patch.label}」を変更しました`, 'ok');
 }
 
-/* ---------------- B2: 卓の占有範囲と重なり判定 ---------------- */
-const GRID = 2.5;                                  /* グリッドスナップの刻み（％） */
-/* 中心からの半幅・半高（VB 座標）。名前枠のぶんも見込む */
-function tableBox(tb) {
-  const g = tableGeom(tb);
-  if (g.mode === 'round') return { hw: 118, hh: 108 };
-  if (g.mode === 'list') return { hw: g.half + 16, hh: Math.max(g.rowsL, g.rowsR) * g.rowH / 2 + 30 };
-  return { hw: g.w / 2 + 10, hh: g.h / 2 + 46 };
-}
-function tableRect(tb, x = tb.x, y = tb.y) {
-  const b = tableBox(tb), cx = x * VB.w / 100, cy = y * VB.h / 100;
-  return { x1: cx - b.hw, y1: cy - b.hh, x2: cx + b.hw, y2: cy + b.hh };
-}
-const hits = (a, b) => a.x1 < b.x2 && b.x1 < a.x2 && a.y1 < b.y2 && b.y1 < a.y2;
-/* (x, y) に置いたとき重なる相手の id。出入口は 'door' */
-function clashesOf(tb, x, y) {
-  const r = tableRect(tb, x, y), out = [];
-  for (const o of T.tables) if (o.id !== tb.id && hits(r, tableRect(o))) out.push(o.id);
-  if (hits(r, doorRect())) out.push('door');
-  return out;
-}
-/* 会場の壁の内側に収まる範囲へ丸める */
-function clampPos(tb, x, y) {
-  const b = tableBox(tb), P = VB.pad;
-  return {
-    x: Math.min((VB.w - P - b.hw) / VB.w * 100, Math.max((P + b.hw) / VB.w * 100, x)),
-    y: Math.min((VB.h - P - b.hh) / VB.h * 100, Math.max((P + b.hh) / VB.h * 100, y)),
+/* ---------------- B4: 行数・列数・各行の卓数の変更 ---------------- */
+function changeGrid(next) {
+  if (needEdit()) { renderGridBar(); return; }
+  const cur = layoutOf();
+  const rows = Math.min(MAX_ROWS, Math.max(1, next.rows ?? cur.rows));
+  const cols = Math.min(MAX_COLS, Math.max(1, next.cols ?? cur.cols));
+  const src = next.counts ?? cur.counts;
+  const counts = [];
+  for (let r = 0; r < rows; r++) counts.push(Math.min(cols, Math.max(0, src[r] ?? cols)));
+  const L = { rows, cols, counts };
+  const drop = T.tables.filter(t => t.grid_row >= rows || t.grid_col >= counts[t.grid_row]);
+  const n = drop.reduce((k, t) => k + (T.byTable.get(t.id) || []).length, 0);
+  const run = () => {
+    const ids = drop.map(t => t.id);
+    T.tables = T.tables.filter(t => !ids.includes(t.id));
+    T.asg = T.asg.filter(a => !ids.includes(a.table_id));
+    S.ev = { ...(S.ev || {}), layout_rows: rows, layout_cols: cols, row_counts: counts };
+    let added = 0;
+    for (let r = 0; r < rows; r++) for (let c = 0; c < counts[r]; c++)
+      if (!tableAt(r, c)) { T.tables.push(newTable(r, c)); added++; }
+    recomputeOrder(); indexSeating(); renderSeating();
+    const msg = [];
+    if (ids.length) msg.push(`${ids.length} 卓を削除`);
+    if (n) msg.push(`${n} 名を未配席に`);
+    if (added) msg.push(`${added} 卓を追加`);
+    toast(msg.length ? msg.join('・') + 'しました' : 'レイアウトを変更しました', 'ok');
   };
-}
-/* 重ならない空き位置をグリッド順に探す */
-function findFreeSpot(tb, taken) {
-  for (let y = 30; y <= 90; y += GRID) for (let x = 10; x <= 90; x += GRID) {
-    if (!taken.some(o => o.id !== tb.id && hits(tableRect(o), tableRect(tb, x, y)))) return { x, y };
-  }
-  return null;
+  if (!drop.length) { run(); return; }
+  askSeat(`${drop.length} 卓を削除します`,
+    `位置から外れる卓：${drop.map(t => t.label).join('・')}`,
+    n ? `配席されている ${n} 名は未配席に戻ります。よろしいですか。` : 'この卓を削除します。よろしいですか。',
+    run, '削除する');
 }
 
 /* ---------------- B6 世帯の確認 ---------------- */
 function askHousehold(p, n, onYes) {
   const box = $('#m-seatask-box');
   box.innerHTML = `<h3>同行者も一緒に配席しますか</h3>
-    <p class="note">${esc(`${p.fam ?? ''} ${p.giv ?? ''}`.trim())} と同じ回答の同行者が ${n} 名います。</p>
-    <p style="margin:14px 0 18px">同行者 ${n} 名も同じ卓に配席しますか。</p>
-    <div class="row" style="justify-content:flex-end;margin:0">
+    <p class="note">${esc(`${p.fam ?? ''} ${p.giv ?? ''}`.trim())} には未配席の同行者が ${n} 名います。</p>
+    <div class="row" style="justify-content:flex-end;margin:16px 0 0">
       <button class="btn o" id="hh-no">本人だけ</button>
-      <button class="btn" id="hh-yes">はい（同行者も）</button></div>`;
+      <button class="btn" id="hh-yes">同行者も一緒に（${n + 1} 名）</button></div>`;
   openModal('m-seatask');
-  wireClose(box);
   $('#hh-yes').addEventListener('click', () => { closeModal('m-seatask'); onYes(true); });
   $('#hh-no').addEventListener('click', () => { closeModal('m-seatask'); onYes(false); });
   $('#hh-yes').focus();
 }
-/* その人と一緒に配席する候補（同じ回答の未配席の同行者／同行者を動かすときは本人は動かさない） */
+/* 同じ回答の未配席の同行者（本人を選んだときだけ） */
 function household(key) {
   const p = T.pool.get(key);
-  if (!p || p.comp || p.type !== 'reply_person') return [];
-  return [...T.pool.values()].filter(x =>
-    x.comp && x.replyId === p.replyId && !T.asgByPerson.has(x.key));
+  if (!p || p.comp || !p.replyId) return [];
+  return [...T.pool.values()].filter(q => q.replyId === p.replyId && q.comp && !T.asgByPerson.has(q.key));
 }
 function assignWithHousehold(key, tableId, seat) {
   const mates = household(key);
-  if (!mates.length) {
+  if (!mates.length)
     return seat != null ? assignToSeat(key, tableId, seat) : assignPeople([key], tableId);
-  }
-  /* B5: 同行者も一緒なら連続した空席に並べる（席指定は本人だけのときに効かせる） */
-  askHousehold(T.pool.get(key), mates.length, yes => yes
-    ? assignPeople([key, ...mates.map(m => m.key)], tableId)
-    : (seat != null ? assignToSeat(key, tableId, seat) : assignPeople([key], tableId)));
+  askHousehold(T.pool.get(key), mates.length, withMates => {
+    if (!withMates) return seat != null ? assignToSeat(key, tableId, seat) : assignPeople([key], tableId);
+    if (seat != null) { assignToSeat(key, tableId, seat, true); assignPeople(mates.map(m => m.key), tableId); }
+    else assignPeople([key, ...mates.map(m => m.key)], tableId);
+  });
 }
-
-
 /* ---------------- B4 空席をクリックして配席 ---------------- */
 const POP = { tid: null, seat: null, q: '', mates: true };
 const popOpen = () => POP.tid != null;
@@ -4599,13 +4921,13 @@ function renderPopList() {
   const anyMate = list.some(p => household(p.key).length);
   $('#pp-mates').closest('label').classList.toggle('off', !anyMate);
 }
-async function popAssign(key) {
+function popAssign(key) {
   const tid = POP.tid, seat = POP.seat, withMates = POP.mates && $('#pp-mates')?.checked !== false;
   const tb = T.tables.find(t => t.id === tid);
   closeSeatPop();
   const mates = withMates ? household(key) : [];
-  await assignToSeat(key, tid, seat, true);
-  if (mates.length) await assignPeople(mates.map(m => m.key), tid, null, true);
+  assignToSeat(key, tid, seat, true);
+  if (mates.length) assignPeople(mates.map(m => m.key), tid, null, true);
   toast(`${mates.length + 1} 名を「${tb?.label ?? ''}」に配席しました`, 'ok');
 }
 function openSeatPop(tid, seat, cx, cy) {
@@ -4637,11 +4959,12 @@ document.addEventListener('pointerdown', e => {
 }, true);
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && popOpen()) closeSeatPop(); });
 
-/* ---------------- B1 上部バーの「卓を選択」モード ---------------- */
+/* ---------------- B1 上部バーの「卓を選択」モード（配席の入れ替え） ---------------- */
 const SW = { on: false, tables: [] };
 function swapStart() {
+  if (needEdit()) return;
   SW.on = true; SW.tables = [];
-  if (BK.on) bulkStop();
+  if (BK.on) { BK.on = false; BK.tables.clear(); }
   T.sel = null; closeSeatPop();
   renderSeating();
 }
@@ -4659,7 +4982,7 @@ function renderSwapBar() {
   $('#sv-swapgo').disabled = SW.tables.length !== 2;
 }
 
-/* ---------------- ドラッグ（Pointer Events：マウス・タッチ共通） ---------------- */
+/* ---------------- ドラッグ（Pointer Events：マウス・タッチ共通。編集モードのみ） ---------------- */
 function ghostHTML(kind, id) {
   if (kind === 'chip') {
     const a = T.asg.find(x => x.id === id);
@@ -4672,7 +4995,7 @@ function ghostHTML(kind, id) {
 function beginDrag(d, ev) {
   endDrag();
   T.drag = { ...d, sx: ev.clientX, sy: ev.clientY, moved: false, ghost: null, hov: null };
-  if (d.kind === 'table' || d.kind === 'tap') {
+  if (d.kind === 'table') {
     T.drag.lp = setTimeout(() => {
       if (T.drag && !T.drag.moved) { const id = T.drag.id; endDrag(); openTableModal(id); }
     }, 600);
@@ -4722,28 +5045,19 @@ function onDragMove(ev) {
       d.g = $(`#sv-canvas .tb[data-id="${d.id}"]`);
       d.g?.classList.add('drag');
       const tb = T.tables.find(t => t.id === d.id);
-      d.x0 = tb.x; d.y0 = tb.y;
+      const c = tableCenter(tb); d.cx = c.cx; d.cy = c.cy;
     }
   }
   ev.preventDefault();
-
   if (d.kind === 'table') {
-    const tb = T.tables.find(t => t.id === d.id);
+    /* B3: 卓はグリッドの位置にしか置けない。ドラッグ中は仮に動かし、ドロップ先の卓を強調する */
     const r = $('#sv-box').getBoundingClientRect();
-    /* 画面上の SVG は viewBox を等比で収めているので、実描画の幅・高さで換算する */
     const k = Math.min(r.width / VB.w, r.height / VB.h);
-    let nx = d.x0 + dx / (VB.w * k) * 100, ny = d.y0 + dy / (VB.h * k) * 100;
-    if (T.snap) { nx = Math.round(nx / GRID) * GRID; ny = Math.round(ny / GRID) * GRID; }
-    ({ x: nx, y: ny } = clampPos(tb, nx, ny));
-    tb.x = +nx.toFixed(2); tb.y = +ny.toFixed(2);
-    d.g?.setAttribute('transform', `translate(${(tb.x * VB.w / 100).toFixed(1)},${(tb.y * VB.h / 100).toFixed(1)})`);
-    /* B2: 他の卓・高砂・出入口と重なる位置は臙脂の枠で警告する */
-    const cl = clashesOf(tb, tb.x, tb.y);
-    d.clash = cl.length > 0;
-    d.g?.classList.toggle('clash', d.clash);
-    $$('#sv-canvas .tb.clash').forEach(g => { if (g !== d.g && !cl.includes(g.dataset.id)) g.classList.remove('clash'); });
-    for (const id of cl) if (id !== 'door') $(`#sv-canvas .tb[data-id="${id}"]`)?.classList.add('clash');
-    $('#sv-canvas .doorg')?.classList.toggle('clash', cl.includes('door'));
+    d.g?.setAttribute('transform', `translate(${(d.cx + dx / k).toFixed(1)},${(d.cy + dy / k).toFixed(1)})`);
+    d.g?.setAttribute('pointer-events', 'none');
+    const t = dropTarget(ev.clientX, ev.clientY);
+    const el = t.kind !== 'none' && t.el && t.el !== d.g ? t.el : null;
+    if (d.hov !== el) { d.hov?.classList.remove('hov'); d.hov = el; d.hov?.classList.add('hov'); }
     return;
   }
   d.ghost.style.transform = `translate(${ev.clientX + 12}px,${ev.clientY + 10}px)`;
@@ -4757,31 +5071,28 @@ function onDragUp(ev) {
   const d = T.drag; if (!d) return;
   const moved = d.moved, kind = d.kind, id = d.id, seat = d.seat;
   const t = moved ? dropTarget(ev.clientX, ev.clientY) : null;
-  const tb = kind === 'table' ? T.tables.find(x => x.id === id) : null;
   endDrag();
 
   if (kind === 'table') {
-    if (!moved || !tb) return;
-    if (d.clash) {                                /* B2: 重なったままでは保存しない */
-      tb.x = d.x0; tb.y = d.y0; renderSeating();
-      toast('他の卓・高砂・出入口と重なるため、元の位置に戻しました', 'err');
+    if (!moved) {
+      /* タップ：人を選んでいれば、その卓の空き最小席へ */
+      if (T.sel) { const k = T.sel; T.sel = null; assignWithHousehold(k, id); }
       return;
     }
-    if (tb.x !== d.x0 || tb.y !== d.y0) saveTablePos(tb);
-    renderSeating();
+    if (t && t.kind !== 'none' && t.id && t.id !== id) swapGrid(id, t.id);
+    else renderSeating();
     return;
   }
-
   if (!moved) {                                   /* クリック／タップ */
     if (kind === 'person') {
       T.sel = T.sel === id ? null : id;
       renderSeatSide();
-    } else if (T.sel && (kind === 'tap' || kind === 'chip' || kind === 'seat')) {
+    } else if (T.sel && (kind === 'chip' || kind === 'seat')) {
       const k = T.sel; T.sel = null;
-      /* C4・B2: 人を選んでから席をタップ → その席へ。卓をタップ → 空き最小席へ */
+      /* C4・B2: 人を選んでから席をタップ → その席へ。名前をタップ → その卓の空き最小席へ */
       if (kind === 'seat') assignWithHousehold(k, id, seat);
       else {
-        const tid = kind === 'tap' ? id : T.asg.find(a => a.id === id)?.table_id;
+        const tid = T.asg.find(a => a.id === id)?.table_id;
         if (tid) assignWithHousehold(k, tid);
       }
     } else if (kind === 'seat') {
@@ -4801,34 +5112,7 @@ function onDragUp(ev) {
   }
 }
 
-
-/* ---------------- B5 定員の変更 ---------------- */
-/* 空席を末尾から削って席番号を 0 から連番に詰め直す。
-   移動先は必ず現在の席番号以下なので、小さい番号から順に書けば
-   (table_id, seat_index) の一意制約に当たらない */
-async function compactSeats(tb, list) {
-  const ups = [];
-  list.forEach((a, i) => { if (a.seat_index !== i) ups.push({ a, i }); });
-  if (!ups.length) return true;
-  for (const { a, i } of ups) a.seat_index = i;
-  indexSeating(); renderSeating();
-  for (const { a, i } of ups) {
-    const { error } = await sb.from('seating_assignments').update({ seat_index: i }).eq('id', a.id);
-    if (error) { toast('席番号の詰め直しに失敗：' + error.message, 'err'); await reloadSeating(); return false; }
-  }
-  return true;
-}
-const seatedOf = tb => (T.byTable.get(tb.id) || []).slice()
-  .sort((a, b) => (a.seat_index ?? 9999) - (b.seat_index ?? 9999));
-
-async function saveTablePatch(tb, patch, msg) {
-  Object.assign(tb, patch);
-  closeModal('m-table');
-  renderSeating();
-  await seatWrite(() => sb.from('seating_tables').update(patch).eq('id', tb.id), '卓の保存に失敗');
-  toast(msg || `「${patch.label}」を保存しました`, 'ok');
-}
-/* B5: 定員を減らして席が足りないとき、外す人を選んでもらう */
+/* ---------------- B5 定員を減らして席が足りないとき、外す人を選んでもらう ---------------- */
 function openCapPicker(tb, cap, list, patch) {
   const need = list.length - cap;
   const box = $('#m-table-box');
@@ -4857,41 +5141,13 @@ function openCapPicker(tb, cap, list, patch) {
     $('#cp-go').disabled = n < need;
   };
   boxes.forEach(b => b.addEventListener('change', sync)); sync();
-  $('#cp-go').addEventListener('click', async () => {
+  $('#cp-go').addEventListener('click', () => {
     const ids = boxes.filter(b => b.checked).map(b => b.value);
-    closeModal('m-table');
     T.asg = T.asg.filter(a => !ids.includes(a.id));
-    indexSeating(); renderSeating();
-    const ok = await seatWrite(() => sb.from('seating_assignments').delete().in('id', ids),
-      '未配席に戻せませんでした');
-    if (!ok) return;
-    if (!await compactSeats(tb, seatedOf(tb))) return;
-    await saveTablePatch(tb, patch,
-      `「${patch.label}」の定員を ${cap} にし、${ids.length} 名を未配席に戻しました`);
+    indexSeating();
+    compactSeats(tb, seatedOf(tb));
+    saveTablePatch(tb, patch, `「${patch.label}」の定員を ${cap} にし、${ids.length} 名を未配席に戻しました`);
   });
-}
-
-/* ---------------- B1 卓の入れ替え ---------------- */
-/* 両卓の全配席を席番号ごと交換する。
-   (table_id, seat_index) の一意制約に当たらないよう、
-   ①A側の席番号を null にする → ②B側を A へ移す → ③A側を B へ席番号ごと移す */
-async function swapTables(aId, bId) {
-  const A = T.tables.find(t => t.id === aId), B = T.tables.find(t => t.id === bId);
-  if (!A || !B || aId === bId) return;
-  const as = seatedOf(A), bs = seatedOf(B);
-  const keep = new Map([...as, ...bs].map(a => [a.id, a.seat_index]));
-  /* 楽観更新 */
-  for (const a of as) a.table_id = bId;
-  for (const b of bs) b.table_id = aId;
-  indexSeating(); renderSeating();
-  const up = (id, patch) => sb.from('seating_assignments').update(patch).eq('id', id);
-  let e = null;
-  for (const a of as) { e = (await up(a.id, { seat_index: null })).error; if (e) break; }
-  if (!e) for (const b of bs) { e = (await up(b.id, { table_id: aId, seat_index: keep.get(b.id) })).error; if (e) break; }
-  if (!e) for (const a of as) { e = (await up(a.id, { table_id: bId, seat_index: keep.get(a.id) })).error; if (e) break; }
-  if (e) { toast('卓の入れ替えに失敗：' + e.message, 'err'); await reloadSeating(); return; }
-  indexSeating(); renderSeating();
-  toast(`「${A.label}」と「${B.label}」の配席を入れ替えました`, 'ok');
 }
 /* 定員が違う卓どうしだと席があふれることがあるので、確認で知らせる */
 function askSwapTables(aId, bId, after) {
@@ -4905,89 +5161,67 @@ function askSwapTables(aId, bId, after) {
     `${A.label}：${an} 名／${B.label}：${bn} 名。席番号はそのままで、卓だけを入れ替えます。`
       + (over.length ? `　※${over.join('・')} が入るため定員超過になります。` : ''),
     '両方の卓の配席をすべて入れ替えます。よろしいですか。',
-    async () => { await swapTables(aId, bId); after?.(); }, '入れ替える');
+    () => { swapTables(aId, bId); after?.(); }, '入れ替える');
 }
 
 /* ---------------- B5 卓の編集 ---------------- */
 function openTableModal(id, focusMemo) {
+  if (needEdit()) return;
   const tb = T.tables.find(t => t.id === id);
   if (!tb) return;
   const used = (T.byTable.get(tb.id) || []).length;
   const box = $('#m-table-box');
   box.innerHTML = `<h3>卓の編集</h3>
-    <p class="note">現在 ${used} 名が配席されています。</p>
+    <p class="note">現在 ${used} 名が配席されています。位置：${tb.grid_row + 1} 行目・左から ${tb.grid_col + 1} 番目</p>
     <div class="two" style="margin-top:12px">
-      <div class="f req"><label>卓名</label><input id="tf-label" value="${esc(tb.label)}" maxlength="12"></div>
-      <div class="f req"><label>定員</label><input id="tf-cap" type="number" min="1" max="${SEATS_PER_TABLE}" value="${tb.capacity}"></div>
+      <div class="f req"><label>卓名（A, B… のほか「ケーキ」「受付」なども可）</label><input id="tf-label" value="${esc(tb.label)}" maxlength="12"></div>
+      <div class="f req"><label>定員（0〜${SEATS_PER_TABLE}。0＝物置きなど、配席しない卓）</label><input id="tf-cap" type="number" min="0" max="${SEATS_PER_TABLE}" value="${tb.capacity}"></div>
     </div>
     <div class="f"><label>形</label><select id="tf-shape">${SHAPES.map(([v, l]) =>
       `<option value="${v}"${tb.shape === v ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
-    <div class="f"><label>メモ（配席の申し送り。キャンバスの📝に出ます）</label>
+    <div class="f"><label>メモ（卓の申し送り。キャンバスの📝と管理用座席表に出ます）</label>
       <textarea id="tf-memo" rows="3" placeholder="例：新婦の親族卓。車椅子の導線を確保">${esc(tb.memo || '')}</textarea></div>
-    <div class="f swapbox"><label>別の卓と入れ替え（両卓の配席を席番号ごと交換します）</label>
+    <div class="f swapbox"><label>別の卓と配席を入れ替え（両卓の配席を席番号ごと交換します）</label>
       <div class="row" style="margin:0">
         <select id="tf-swap"><option value="">入れ替える卓を選ぶ</option>${
-          T.tables.filter(t => t.id !== tb.id).map(t =>
+          orderedTables().filter(t => t.id !== tb.id).map(t =>
             `<option value="${esc(t.id)}">${esc(t.label)}（${(T.byTable.get(t.id) || []).length} / ${t.capacity} 名）</option>`).join('')}</select>
         <button type="button" class="btn s o" id="tf-swapgo">入れ替え</button>
       </div></div>
-    <div class="row" style="margin:16px 0 0">
-      <button class="btn s enji" id="tf-del">卓を削除</button>
-      <span class="sp"></span>
+    <p class="note">卓の数は上部バーの「行・列・各行の卓数」で決まります。位置を変えるには卓をドラッグして別の卓と入れ替えてください。</p>
+    <div class="row" style="justify-content:flex-end;margin:16px 0 0">
       <button class="btn o" data-close>キャンセル</button>
-      <button class="btn" id="tf-save">保存</button></div>`;
+      <button class="btn" id="tf-save">OK</button></div>`;
   openModal('m-table');
   wireClose(box);
   (focusMemo ? $('#tf-memo') : $('#tf-label')).focus();
 
-  $('#tf-save').addEventListener('click', async () => {
+  $('#tf-save').addEventListener('click', () => {
     const label = $('#tf-label').value.trim();
-    const cap = Math.max(1, Math.min(SEATS_PER_TABLE, +$('#tf-cap').value || 1));
+    const cap = Math.max(0, Math.min(SEATS_PER_TABLE, +$('#tf-cap').value || 0));
     if (!label) { toast('卓名を入れてください', 'err'); return; }
     const patch = { label, capacity: cap, shape: $('#tf-shape').value, memo: $('#tf-memo').value.trim() || null };
     const list = seatedOf(tb);
-    /* B5: 増やすときは末尾に空席が増えるだけ。そのまま保存する */
+    /* B5: 増やすときは末尾に空席が増えるだけ */
     if (cap >= tb.capacity) return saveTablePatch(tb, patch);
     /* B5: 減らすときは、まず空席を末尾から削って席番号を 0 から詰め直す */
     if (list.length <= cap) {
       const gaps = list.some((a, i) => a.seat_index !== i);
-      closeModal('m-table');
-      if (!await compactSeats(tb, list)) return;
+      compactSeats(tb, list);
       return saveTablePatch(tb, patch, gaps
         ? `「${label}」の定員を ${cap} にし、席番号を詰め直しました`
-        : `「${label}」を保存しました`);
+        : `「${label}」を変更しました`);
     }
     /* B5: 詰めても足りないときは、外す人を選んでもらってから確定する */
     openCapPicker(tb, cap, list, patch);
   });
-  /* B1: 別の卓と入れ替え */
   $('#tf-swapgo').addEventListener('click', () => {
     const other = $('#tf-swap').value;
     if (!other) { toast('入れ替える卓を選んでください', 'err'); return; }
     closeModal('m-table');
     askSwapTables(tb.id, other);
   });
-  $('#tf-del').addEventListener('click', () => {
-    if (used) {
-      box.innerHTML = `<h3>卓を削除</h3>
-        <p>「${esc(tb.label)}」には ${used} 名が配席されています。削除するとこの ${used} 名は未配席に戻ります。</p>
-        <div class="row" style="justify-content:flex-end;margin:16px 0 0">
-          <button class="btn o" data-close>キャンセル</button>
-          <button class="btn enji" id="tf-del2">削除する</button></div>`;
-      wireClose(box);
-      $('#tf-del2').addEventListener('click', () => delTable(tb));
-    } else delTable(tb);
-  });
 }
-async function delTable(tb) {
-  closeModal('m-table');
-  T.tables = T.tables.filter(t => t.id !== tb.id);
-  T.asg = T.asg.filter(a => a.table_id !== tb.id);       /* on delete cascade と同じ結果 */
-  indexSeating(); renderSeating();
-  await seatWrite(() => sb.from('seating_tables').delete().eq('id', tb.id), '卓の削除に失敗');
-  toast(`「${tb.label}」を削除しました`, 'ok');
-}
-$('#sv-add').addEventListener('click', () => setTableCount(guestTables().length + 1));
 
 /* ---------------- D1 要確認 ---------------- */
 $('#sv-stale').addEventListener('click', () => {
@@ -4998,32 +5232,153 @@ $('#sv-stale').addEventListener('click', () => {
     const tb = T.tables.find(t => t.id === a.table_id);
     return `<tr><td>${esc(tb?.label ?? '')}</td><td><b>${esc(staleName(a))}</b></td>
       <td class="why">${esc(staleWhy(a))}</td>
-      <td><button class="btn s o" data-un="${esc(a.id)}">未配席に戻す</button></td></tr>`;
+      <td><button class="btn s o" data-un="${esc(a.id)}"${T.edit ? '' : ' disabled'}>未配席に戻す</button></td></tr>`;
   };
   box.innerHTML = `<h3>要確認 ${list.length} 名</h3>
-    <p class="note">回答が欠席に変わった・削除された人が席に残っています。キャンバスでは臙脂の斜線で表示されます。</p>
+    <p class="note">回答が欠席に変わった・削除された人が席に残っています。キャンバスでは臙脂の斜線で表示されます。${T.edit ? '' : '未配席に戻すには編集モードにしてください。'}</p>
     <div class="tblwrap" style="margin-top:10px"><table class="stale"><thead><tr>
       <th>卓</th><th>氏名</th><th>理由</th><th></th></tr></thead><tbody>${list.map(row).join('')}</tbody></table></div>
     <div class="row" style="justify-content:flex-end;margin:16px 0 0">
-      <button class="btn enji s" id="st-all">${list.length} 名すべて未配席に戻す</button>
+      <button class="btn enji s" id="st-all"${T.edit ? '' : ' disabled'}>${list.length} 名すべて未配席に戻す</button>
       <button class="btn o" data-close>閉じる</button></div>`;
   openModal('m-table');
   wireClose(box);
-  $$('[data-un]', box).forEach(b => b.addEventListener('click', async () => {
-    await unseat(b.dataset.un);
+  $$('[data-un]', box).forEach(b => b.addEventListener('click', () => {
+    unseat(b.dataset.un);
     closeModal('m-table');
     if (staleAsg().length) $('#sv-stale').click();
   }));
-  $('#st-all').addEventListener('click', async () => {
+  $('#st-all').addEventListener('click', () => {
     closeModal('m-table');
     const ids = list.map(a => a.id);
     T.asg = T.asg.filter(a => !ids.includes(a.id));
     indexSeating(); renderSeating();
-    await seatWrite(() => sb.from('seating_assignments').delete().in('id', ids), '未配席に戻せませんでした');
     toast(`${ids.length} 名を未配席に戻しました`, 'ok');
   });
 });
 
+/* ---------------- イベント ---------------- */
+$('#sv-box').addEventListener('pointerdown', e => {
+  if (e.button != null && e.button !== 0) return;
+  if (!T.edit) return;                          /* C1: プレビューでは何も反応しない */
+  if ((BK.on || SW.on) && (e.target.closest('.cxg') || e.target.closest('.tmemo'))) { e.preventDefault(); return; }
+  const x = e.target.closest('.cxg');
+  if (x) { e.preventDefault(); unseat(x.dataset.x); return; }
+  const memo = e.target.closest('.tmemo');
+  if (memo) { e.preventDefault(); openTableModal(memo.dataset.memo, true); return; }
+  const chip = e.target.closest('.chip');
+  if (chip && !BK.on && !SW.on) { e.preventDefault(); beginDrag({ kind: 'chip', id: chip.dataset.a }, e); return; }
+  const st = e.target.closest('[data-s]');
+  if (st && !BK.on && !SW.on) {
+    e.preventDefault();
+    /* 埋まっている席はその人のドラッグ、空席はドロップ先／タップ配席の対象 */
+    beginDrag(st.dataset.a
+      ? { kind: 'chip', id: st.dataset.a }
+      : { kind: 'seat', id: st.dataset.t, seat: +st.dataset.s }, e);
+    return;
+  }
+  const tb = e.target.closest('.tb');
+  if (!tb) return;
+  e.preventDefault();
+  if (SW.on) {                                  /* B1: 入れ替える2卓を選ぶモード */
+    const id = tb.dataset.id;
+    const i = SW.tables.indexOf(id);
+    if (i >= 0) SW.tables.splice(i, 1);
+    else { SW.tables.push(id); if (SW.tables.length > 2) SW.tables.shift(); }
+    renderSeating();
+    return;
+  }
+  if (BK.on) {                                  /* G1: 卓を選択するモード */
+    const id = tb.dataset.id;
+    if ((T.tables.find(t => t.id === id)?.capacity || 0) <= 0) { toast('定員0の卓は一括配席の対象外です', 'err'); return; }
+    BK.tables.has(id) ? BK.tables.delete(id) : BK.tables.add(id);
+    renderSeating();
+    return;
+  }
+  beginDrag({ kind: 'table', id: tb.dataset.id }, e);
+});
+$('#sv-box').addEventListener('dblclick', e => {
+  const tb = e.target.closest('.tb');
+  if (tb && T.edit && !BK.on) openTableModal(tb.dataset.id);
+});
+$('#sv-box').addEventListener('contextmenu', e => { if (e.target.closest('.tb')) e.preventDefault(); });
+
+$('#sv-list').addEventListener('pointerdown', e => {
+  if (e.button != null && e.button !== 0) return;
+  const rw = e.target.closest('.srw');
+  if (!rw) return;
+  e.preventDefault();
+  if (!T.edit) return;
+  beginDrag({ kind: 'person', id: rw.dataset.k }, e);
+});
+$('#sv-list').addEventListener('click', e => {
+  const hd = e.target.closest('.ahd');
+  if (!hd) return;
+  const k = hd.closest('.sacc').dataset.acc;
+  T.open[k] = !T.open[k];
+  renderSeatSide();
+});
+$('#sv-q').addEventListener('input', e => { T.q = e.target.value; renderSeatSide(); });
+$('#sv-side-f').addEventListener('change', e => { T.sideF = e.target.value; renderSeatSide(); });
+$('#sv-circle').addEventListener('change', e => { T.circle = e.target.value; renderSeatSide(); });
+$('#sv-sort').addEventListener('change', e => { T.sort = e.target.value; renderSeatSide(); });
+$('#sv-edit').addEventListener('click', enterEdit);
+$('#sv-save').addEventListener('click', saveEdits);
+$('#sv-discard').addEventListener('click', discardEdits);
+/* C1・C3: 全体の申し送りは編集モード中だけ書き換えられ、保存で反映 */
+$('#sv-note').addEventListener('input', () => {
+  if (!T.edit) return;
+  S.ev = { ...(S.ev || {}), seating_note: $('#sv-note').value.trim() || null };
+  renderEditBar();
+});
+const foldSide = v => {
+  T.folded = v;
+  localStorage.setItem('seatFold', v ? '1' : '0');
+  renderSeating();
+};
+$('#sv-fold').addEventListener('click', () => foldSide(!T.folded));
+$('#sv-fold2').addEventListener('click', () => foldSide(true));
+$('#sv-unfold').addEventListener('click', () => foldSide(false));
+$('#sv-bulk').addEventListener('click', () => BK.on ? bulkStop() : bulkStart());
+$('#sv-swap').addEventListener('click', () => SW.on ? swapStop() : swapStart());
+$('#sv-swapquit').addEventListener('click', swapStop);
+$('#sv-swapgo').addEventListener('click', () => {
+  if (SW.tables.length !== 2) return;
+  const [a, b] = SW.tables;
+  askSwapTables(a, b, () => swapStop());
+});
+/* C1: 表示形式の切替。選択は localStorage に保持 */
+$$('#sv-view button').forEach(b => b.addEventListener('click', () => {
+  if (T.view === b.dataset.v) return;
+  T.view = b.dataset.v;
+  localStorage.setItem('seatView', T.view);
+  renderSeating();
+}));
+
+/* 共通の確認モーダル */
+function askSeat(title, note, question, onYes, yesLabel) {
+  let done = false;
+  const box = $('#m-seatask-box');
+  box.innerHTML = `<h3>${esc(title)}</h3>
+    ${note ? `<p class="note">${esc(note)}</p>` : ''}
+    <p style="margin:14px 0 18px">${esc(question)}</p>
+    <div class="row" style="justify-content:flex-end;margin:0">
+      <button class="btn o" data-close>キャンセル</button>
+      <button class="btn" id="ask-yes">${esc(yesLabel || '実行する')}</button></div>`;
+  openModal('m-seatask');
+  wireClose(box);
+  /* キャンセル・Esc・背景クリックでも行列のセレクトを実際の値へ戻す */
+  const mo = new MutationObserver(() => {
+    if ($('#m-seatask').classList.contains('on')) return;
+    mo.disconnect();
+    if (!done && T.loaded) renderGridBar();
+  });
+  mo.observe($('#m-seatask'), { attributes: true, attributeFilter: ['class'] });
+  $('#ask-yes').addEventListener('click', () => {
+    done = true; closeModal('m-seatask'); onYes();
+  });
+  $('#ask-yes').focus();
+}
 /* ---------------- B7・C・D 座席表の書き出し ---------------- */
 /* 図は SVG をそのまま高解像度でラスタライズして書き出す。
    PNG も PDF も同じ絵になり、日本語も画面と同じ字形で出る。 */
@@ -5197,7 +5552,7 @@ $('#sv-csv').addEventListener('click', () => {
   ]);
   /* E3: 卓番号 → 座席番号。未配席は末尾 */
   const seatedRows = [];
-  for (const tb of T.tables) {
+  for (const tb of orderedTables()) {
     const { seats, extra } = seatSlots(tb);
     const all = [...seats.entries(), ...extra.map((x, k) => [seats.length + k, x])];
     for (const [i, a] of all) {
@@ -5221,276 +5576,13 @@ $('#sv-csv').addEventListener('click', () => {
   saveBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), DLNAME('seating') + '.csv');
   toast(`${body.length} 行を書き出しました`, 'ok');
 });
-
-/* ---------------- イベント ---------------- */
-$('#sv-box').addEventListener('pointerdown', e => {
-  if (e.button != null && e.button !== 0) return;
-  if ((BK.on || SW.on) && (e.target.closest('.cxg') || e.target.closest('.tmemo'))) { e.preventDefault(); return; }
-  const x = e.target.closest('.cxg');
-  if (x) { e.preventDefault(); unseat(x.dataset.x); return; }
-  const memo = e.target.closest('.tmemo');
-  if (memo) { e.preventDefault(); openTableModal(memo.dataset.memo, true); return; }
-  const chip = e.target.closest('.chip');
-  if (chip && !BK.on && !SW.on) { e.preventDefault(); beginDrag({ kind: 'chip', id: chip.dataset.a }, e); return; }
-  const st = e.target.closest('[data-s]');
-  if (st && !BK.on && !SW.on) {
-    e.preventDefault();
-    /* 埋まっている席はその人のドラッグ、空席はドロップ先／タップ配席の対象 */
-    beginDrag(st.dataset.a
-      ? { kind: 'chip', id: st.dataset.a }
-      : { kind: 'seat', id: st.dataset.t, seat: +st.dataset.s }, e);
-    return;
-  }
-  const tb = e.target.closest('.tb');
-  if (!tb) return;
-  e.preventDefault();
-  if (SW.on) {                                  /* B1: 入れ替える2卓を選ぶモード */
-    const id = tb.dataset.id;
-    const i = SW.tables.indexOf(id);
-    if (i >= 0) SW.tables.splice(i, 1);
-    else { SW.tables.push(id); if (SW.tables.length > 2) SW.tables.shift(); }
-    renderSeating();
-    return;
-  }
-  if (BK.on) {                                  /* G1: 卓を選択するモード */
-    const id = tb.dataset.id;
-    if (T.tables.find(t => t.id === id)?.shape === 'head') { toast('高砂は一括配席の対象外です', 'err'); return; }
-    BK.tables.has(id) ? BK.tables.delete(id) : BK.tables.add(id);
-    renderSeating();
-    return;
-  }
-  beginDrag({ kind: T.lock ? 'tap' : 'table', id: tb.dataset.id }, e);
-});
-$('#sv-box').addEventListener('dblclick', e => {
-  const tb = e.target.closest('.tb');
-  if (tb && !BK.on) openTableModal(tb.dataset.id);
-});
-$('#sv-box').addEventListener('contextmenu', e => { if (e.target.closest('.tb')) e.preventDefault(); });
-
-$('#sv-list').addEventListener('pointerdown', e => {
-  if (e.button != null && e.button !== 0) return;
-  const rw = e.target.closest('.srw');
-  if (!rw) return;
-  e.preventDefault();
-  beginDrag({ kind: 'person', id: rw.dataset.k }, e);
-});
-$('#sv-list').addEventListener('click', e => {
-  const hd = e.target.closest('.ahd');
-  if (!hd) return;
-  const k = hd.closest('.sacc').dataset.acc;
-  T.open[k] = !T.open[k];
-  renderSeatSide();
-});
-$('#sv-q').addEventListener('input', e => { T.q = e.target.value; renderSeatSide(); });
-$('#sv-side-f').addEventListener('change', e => { T.sideF = e.target.value; renderSeatSide(); });
-$('#sv-circle').addEventListener('change', e => { T.circle = e.target.value; renderSeatSide(); });
-$('#sv-sort').addEventListener('change', e => { T.sort = e.target.value; renderSeatSide(); });
-$('#sv-lock').addEventListener('change', e => {
-  T.lock = e.target.checked;
-  localStorage.setItem('seatLock', T.lock ? '1' : '0');
-  toast(T.lock ? 'レイアウトを固定しました' : '卓をドラッグして動かせます', 'ok');
-});
-$('#sv-snap').addEventListener('change', e => {
-  T.snap = e.target.checked;
-  localStorage.setItem('seatSnap', T.snap ? '1' : '0');
-});
-/* B2: 自動配置に戻す（確認あり）。全卓を卓数ルールで置き直し pos_locked=false */
-$('#sv-reset').addEventListener('click', () => {
-  const n = T.tables.filter(t => t.pos_locked).length;
-  askSeat('自動配置に戻します',
-    n ? `手で動かした卓が ${n} 卓あります。` : '手で動かした卓はありません。',
-    '全卓を卓数ルールの位置に置き直します。誰がどの卓かは変わりません。', resetLayout, '戻す');
-});
-async function resetLayout() {
-  const gs = guestTables(), pos = autoLayout(gs.length), patches = [];
-  gs.forEach((t, i) => {
-    const p = pos[i] || { x: 50, y: ROW_MID };
-    const label = autoLabeled(t) ? String(i + 1) : t.label;
-    const patch = { x: p.x, y: p.y, pos_locked: false, sort_order: i + 1, label };
-    Object.assign(t, patch);
-    patches.push({ id: t.id, ...patch });
-  });
-  const hd = headTable();
-  if (hd && (hd.x !== HEAD.x || hd.y !== HEAD.y || hd.pos_locked)) {
-    const patch = { x: HEAD.x, y: HEAD.y, pos_locked: false };
-    Object.assign(hd, patch); patches.push({ id: hd.id, ...patch });
-  }
-  renderSeating();
-  if (await savePatches(patches)) toast('自動配置に戻しました', 'ok');
-}
-/* C1: 全体の申し送りは入力が止まったら自動保存 */
-let noteTimer = null;
-$('#sv-note').addEventListener('input', () => {
-  clearTimeout(noteTimer);
-  $('#sv-notesaved').textContent = '…';
-  noteTimer = setTimeout(async () => {
-    const ok = await saveEventSettings({ seating_note: $('#sv-note').value.trim() || null });
-    $('#sv-notesaved').textContent = ok ? '保存しました' : '保存に失敗しました';
-  }, 600);
-});
-const foldSide = v => {
-  T.folded = v;
-  localStorage.setItem('seatFold', v ? '1' : '0');
-  renderSeating();
-};
-$('#sv-fold').addEventListener('click', () => foldSide(!T.folded));
-$('#sv-fold2').addEventListener('click', () => foldSide(true));
-$('#sv-unfold').addEventListener('click', () => foldSide(false));
-
-
-/* ---------------- F1・F2・F5・F6 卓数の変更と再配置 ---------------- */
-/* F5: 自動連番のまま（数字だけ）の卓名は付け替える。改名された卓名はそのまま残す */
-const autoLabeled = tb => /^\d+$/.test(String(tb.label ?? '').trim());
-/* 現在の卓に自動レイアウトを当てる。DB へは patch をまとめて送る。
-   B2: 手で動かした卓（pos_locked）は位置を保ち、それ以外の卓だけを
-   固定卓・高砂と重ならない自動配置の位置へ順に置く（まず自分の番号の位置、次に空いている位置） */
-function applyLayout(list) {
-  const pos = autoLayout(list.length);
-  const taken = [...list.filter(t => t.pos_locked), ...T.tables.filter(t => t.shape === 'head')];
-  const patches = [];
-  list.forEach((t, i) => {
-    const patch = {};
-    if (!t.pos_locked) {
-      const ok = p => !taken.some(o => o.id !== t.id && hits(tableRect(o), tableRect(t, p.x, p.y)));
-      const p = [pos[i], ...pos].filter(Boolean).find(ok) || findFreeSpot(t, taken) || { x: 50, y: ROW_MID };
-      if (t.x !== p.x || t.y !== p.y) { patch.x = p.x; patch.y = p.y; }
-      Object.assign(t, patch);
-      taken.push(t);
-    }
-    const label = autoLabeled(t) ? String(i + 1) : t.label;
-    if (t.label !== label) patch.label = label;
-    if (t.sort_order !== i + 1) patch.sort_order = i + 1;
-    Object.assign(t, patch);
-    if (Object.keys(patch).length) patches.push({ id: t.id, ...patch });
-  });
-  return patches;
-}
-async function savePatches(patches) {
-  for (const { id, ...patch } of patches) {
-    const ok = await seatWrite(() => sb.from('seating_tables').update(patch).eq('id', id),
-      'レイアウトの保存に失敗');
-    if (!ok) return false;
-  }
-  return true;
-}
-
-/* 初回：高砂と、min 卓ぶんの丸卓を作る */
-async function ensureTables() {
-  const rows = [];
-  if (!headTable()) rows.push({ ...HEAD });
-  const need = guestTables().length ? 0 : minTables();
-  const pos = autoLayout(need);
-  for (let i = 0; i < need; i++) {
-    rows.push({ label: String(i + 1), capacity: SEATS_PER_TABLE, shape: 'round',
-      x: pos[i].x, y: pos[i].y, sort_order: i + 1 });
-  }
-  if (!rows.length) return;
-  const { data, error } = await sb.from('seating_tables').insert(rows).select();
-  if (error) { toast('卓の作成に失敗：' + error.message, 'err'); return; }
-  T.tables = [...T.tables, ...(data || [])].sort((a, b) => a.sort_order - b.sort_order);
-  if (need) toast(`出席 ${attendCount()} 名から ${need} 卓を作成しました`, 'ok');
-}
-
-/* F2: 卓数の変更。減らすと後列・右側の卓から外す */
-async function setTableCount(n) {
-  const gs = guestTables();
-  const cur = gs.length;
-  n = Math.min(MAX_TABLES, Math.max(1, n));
-  if (n === cur) return;
-  const shrink = n < cur;
-  const drop = shrink ? gs.slice(n) : [];
-  const moving = shrink ? drop.reduce((k, t) => k + (T.byTable.get(t.id) || []).length, 0) : 0;
-
-  const run = async () => {
-    if (shrink) {
-      const ids = drop.map(t => t.id);
-      T.tables = T.tables.filter(t => !ids.includes(t.id));
-      T.asg = T.asg.filter(a => !ids.includes(a.table_id));   // on delete cascade と同じ結果
-      indexSeating();
-      const ps = applyLayout(guestTables());
-      renderSeating();
-      const ok = await seatWrite(() => sb.from('seating_tables').delete().in('id', ids), '卓の削除に失敗');
-      if (ok) await savePatches(ps);
-      toast(moving ? `${cur - n} 卓を削除し、${moving} 名を未配席に戻しました` : `${cur - n} 卓を削除しました`, 'ok');
-    } else {
-      /* B2: 新しい卓は空いている位置へ（位置は applyLayout が決め直す） */
-      const pos = autoLayout(n);
-      const rows = [];
-      for (let i = cur; i < n; i++) {
-        rows.push({ label: String(i + 1), capacity: SEATS_PER_TABLE, shape: 'round',
-          x: pos[i].x, y: pos[i].y, sort_order: i + 1, pos_locked: false });
-      }
-      const { data, error } = await sb.from('seating_tables').insert(rows).select();
-      if (error) { toast('卓の追加に失敗：' + error.message, 'err'); await reloadSeating(); return; }
-      T.tables = [...T.tables, ...(data || [])];
-      indexSeating();
-      const ps = applyLayout(guestTables());
-      renderSeating();
-      await savePatches(ps);
-      toast(`空の卓を ${n - cur} 卓追加しました`, 'ok');
-    }
-  };
-
-  if (shrink && moving) {
-    return askSeat(`${cur - n} 卓を削除します`,
-      `外れる卓（${drop.map(t => t.label).join('・')}）に ${moving} 名が配席されています。`,
-      `この ${moving} 名を未配席に戻します。`, run);
-  }
-  return run();
-}
-
-/* 共通の確認モーダル */
-function askSeat(title, note, question, onYes, yesLabel) {
-  let done = false;
-  const box = $('#m-seatask-box');
-  box.innerHTML = `<h3>${esc(title)}</h3>
-    ${note ? `<p class="note">${esc(note)}</p>` : ''}
-    <p style="margin:14px 0 18px">${esc(question)}</p>
-    <div class="row" style="justify-content:flex-end;margin:0">
-      <button class="btn o" data-close>キャンセル</button>
-      <button class="btn" id="ask-yes">${esc(yesLabel || '実行する')}</button></div>`;
-  openModal('m-seatask');
-  wireClose(box);
-  /* キャンセル・Esc・背景クリックでも卓数セレクトを実際の卓数へ戻す */
-  const mo = new MutationObserver(() => {
-    if ($('#m-seatask').classList.contains('on')) return;
-    mo.disconnect();
-    if (!done) renderCountBar();
-  });
-  mo.observe($('#m-seatask'), { attributes: true, attributeFilter: ['class'] });
-  $('#ask-yes').addEventListener('click', () => {
-    done = true; closeModal('m-seatask'); onYes();
-  });
-  $('#ask-yes').focus();
-}
-
-/* 上部バーの卓数セレクトと「1卓あたり平均」 */
-function renderCountBar() {
-  const gs = guestTables(), mn = minTables(), att = attendCount();
-  const sel = $('#sv-count');
-  const hi = Math.max(MAX_TABLES, mn, gs.length);
-  const opts = [];
-  for (let i = mn; i <= hi; i++) opts.push(i);
-  if (!opts.includes(gs.length)) opts.unshift(gs.length);
-  sel.innerHTML = opts.map(i => `<option value="${i}">${i} 卓</option>`).join('');
-  sel.value = String(gs.length);
-  /* B5: 平均も不足席数も、各卓の capacity 合計から出す */
-  const capSum = gs.reduce((n, t) => n + (t.capacity || 0), 0);
-  const short = Math.max(0, att - capSum);
-  $('#sv-avg').textContent = gs.length
-    ? `1卓あたり平均 ${(capSum / gs.length).toFixed(1)} 席`
-    : '1卓あたり平均 — 席';
-  $('#sv-min').textContent = `定員合計 ${capSum} 席／出席 ${att} 名／`
-    + (short ? `不足 ${short} 席` : '不足なし');
-  $('#sv-min').classList.toggle('short', short > 0);
-}
-
 /* ============================================================
    G. タグ・Side の一括配席
    ============================================================ */
 const BK = { on: false, tables: new Set(), circle: '', side: '', withProv: false, flip: false };
 
 function bulkStart() {
+  if (needEdit()) return;
   BK.on = true; BK.tables.clear();
   if (SW.on) { SW.on = false; SW.tables = []; }
   T.sel = null; closeSeatPop();
@@ -5622,24 +5714,20 @@ function openBulkPreview() {
   wireClose(box);
   $('#bk-save').addEventListener('click', async () => {
     closeModal('m-table');
-    await bulkApply(put);
+    bulkApply(put);
   });
   $('#bk-save').focus();
 }
-async function bulkApply(put) {
+function bulkApply(put) {
   const rows = [];
   for (const [tid, ps] of put) for (const { p, seat } of ps) {
-    rows.push({ table_id: tid, seat_index: seat, person_type: p.type, person_id: p.id, provisional: p.provisional });
+    rows.push({ id: uuid(), table_id: tid, seat_index: seat, person_type: p.type, person_id: p.id, provisional: p.provisional });
   }
   if (!rows.length) return;
-  for (const r of rows) T.asg.push({ id: 'tmp-' + r.person_type + '-' + r.person_id, ...r });
-  indexSeating(); renderSeating();
-  const { data, error } = await sb.from('seating_assignments')
-    .upsert(rows, { onConflict: 'person_type,person_id' }).select();
-  if (error) { toast('一括配席に失敗：' + error.message, 'err'); await reloadSeating(); return; }
-  for (const row of data || []) {
-    const cur = T.asgByPerson.get(pkey(row.person_type, row.person_id));
-    if (cur) Object.assign(cur, row);
+  for (const r of rows) {
+    const old = T.asgByPerson.get(pkey(r.person_type, r.person_id));
+    if (old) T.asg = T.asg.filter(a => a.id !== old.id);
+    T.asg.push(r);
   }
   BK.on = false; BK.tables.clear();
   indexSeating(); renderSeating();
@@ -5656,67 +5744,59 @@ function wireBulkPanel() {
   $('#bk-flip').addEventListener('change', e => { BK.flip = e.target.checked; re(); });
   $('#bk-go').addEventListener('click', openBulkPreview);
 }
-$('#sv-bulk').addEventListener('click', () => BK.on ? bulkStop() : bulkStart());
-$('#sv-swap').addEventListener('click', () => SW.on ? swapStop() : swapStart());
-$('#sv-swapquit').addEventListener('click', swapStop);
-$('#sv-swapgo').addEventListener('click', () => {
-  if (SW.tables.length !== 2) return;
-  const [a, b] = SW.tables;
-  askSwapTables(a, b, () => swapStop());
-});
-$('#sv-count').addEventListener('change', e => setTableCount(+e.target.value));
-/* C1: 表示形式の切替。選択は localStorage に保持 */
-$$('#sv-view button').forEach(b => b.addEventListener('click', () => {
-  if (T.view === b.dataset.v) return;
-  T.view = b.dataset.v;
-  localStorage.setItem('seatView', T.view);
-  renderSeating();
-}));
+
 
 /* ============================================================
-   A. 基本情報（event_settings：新郎新婦の名前・全体の申し送り）
+   A. 基本情報（event_settings：新郎新婦の姓名・座席表タイトル・レイアウト・全体の申し送り）
    ============================================================ */
-const EV_DEF = { groom_name: '', bride_name: '', groom_name_latin: '', bride_name_latin: '', seating_note: '' };
+const EV_DEF = { groom_family: '', groom_given: '', bride_family: '', bride_given: '',
+  groom_name_latin: '', bride_name_latin: '', chart_title: '', seating_note: '',
+  layout_rows: null, layout_cols: null, row_counts: null };
 async function loadEventSettings() {
   try {
     const { data, error } = await sb.from('event_settings').select('*').eq('id', 1).maybeSingle();
-    S.ev = error ? { ...EV_DEF } : { ...EV_DEF, ...(data || {}) };
+    S.ev = error ? { ...EV_DEF, ...(S.ev || {}) } : { ...EV_DEF, ...(data || {}) };
     if (error) toast('基本情報の読み込みに失敗：' + error.message, 'err');
-  } catch { S.ev = { ...EV_DEF }; }
+  } catch { S.ev = { ...EV_DEF, ...(S.ev || {}) }; }
 }
+/* 基本情報モーダルからの保存（配席の編集モードとは別に、即時に書く） */
 async function saveEventSettings(patch) {
-  S.ev = { ...(S.ev || EV_DEF), ...patch };
-  const { error } = await sb.from('event_settings').upsert({ id: 1, ...patch }, { onConflict: 'id' });
+  const { data, error } = await sb.from('event_settings')
+    .upsert({ id: 1, ...patch, updated_at: new Date().toISOString() }, { onConflict: 'id' }).select().maybeSingle();
   if (error) { toast('基本情報の保存に失敗：' + error.message, 'err'); return false; }
+  S.ev = { ...(S.ev || EV_DEF), ...patch, ...(data || {}) };
+  if (T.base) T.base.ev = { ...T.base.ev, ...patch, ...(data || {}) };   /* 編集中でも差分に数えない */
   return true;
 }
-/* 高砂・座席表の見出しで使う名前 */
+/* 高砂・見出しで使う名前 */
 function coupleNames() {
-  const e = S.ev || EV_DEF;
-  return { g: (e.groom_name || '').trim(), b: (e.bride_name || '').trim(),
-           gl: (e.groom_name_latin || '').trim(), bl: (e.bride_name_latin || '').trim() };
+  const e = S.ev || EV_DEF, t = v => (v || '').trim();
+  return { gf: t(e.groom_family), gg: t(e.groom_given), bf: t(e.bride_family), bg: t(e.bride_given),
+           gl: t(e.groom_name_latin), bl: t(e.bride_name_latin) };
 }
 function openEventModal() {
   const e = S.ev || EV_DEF;
   const box = $('#m-ev-box');
+  const f = (id, label, val, ph, max) =>
+    `<div class="f"><label>${label}</label><input id="${id}" value="${esc(val || '')}" placeholder="${ph}" maxlength="${max || 40}"></div>`;
   box.innerHTML = `<h3>基本情報</h3>
-    <p class="note">新郎新婦の名前は、配席タブの高砂（向かって左が新郎・右が新婦）と、座席表（管理用・ゲスト向け）の見出しに使います。</p>
+    <p class="note">配席タブの見出し（両家の姓と座席表タイトル）と高砂（新郎・新婦の名）、座席表（管理用・ゲスト向け）に使います。</p>
     <div class="two" style="margin-top:12px">
-      <div class="f"><label>新郎（漢字）</label><input id="ev-g" value="${esc(e.groom_name || '')}" placeholder="例：森 喬由樹" maxlength="40"></div>
-      <div class="f"><label>新婦（漢字）</label><input id="ev-b" value="${esc(e.bride_name || '')}" placeholder="例：吉永 百慧" maxlength="40"></div>
-      <div class="f"><label>新郎（ローマ字）</label><input id="ev-gl" value="${esc(e.groom_name_latin || '')}" placeholder="例：Takayuki Mori" maxlength="60"></div>
-      <div class="f"><label>新婦（ローマ字）</label><input id="ev-bl" value="${esc(e.bride_name_latin || '')}" placeholder="例：Momoe Yoshinaga" maxlength="60"></div>
+      ${f('ev-gf', '新郎の姓（漢字）', e.groom_family, '例：森')}${f('ev-gg', '新郎の名（漢字）', e.groom_given, '例：喬由樹')}
+      ${f('ev-bf', '新婦の姓（漢字）', e.bride_family, '例：吉永')}${f('ev-bg', '新婦の名（漢字）', e.bride_given, '例：百慧')}
+      ${f('ev-gl', '新郎（ローマ字）', e.groom_name_latin, '例：Takayuki Mori', 60)}${f('ev-bl', '新婦（ローマ字）', e.bride_name_latin, '例：Momoe Yoshinaga', 60)}
     </div>
+    ${f('ev-title', '座席表タイトル', e.chart_title, DEF_TITLE, 40)}
     <div class="row" style="justify-content:flex-end;margin:16px 0 0">
       <button class="btn o" data-close>キャンセル</button>
       <button class="btn" id="ev-save">保存</button></div>`;
   openModal('m-ev');
   wireClose(box);
-  $('#ev-g').focus();
+  $('#ev-gf').focus();
   $('#ev-save').addEventListener('click', async () => {
     const v = id => $(id).value.trim() || null;
-    const patch = { groom_name: v('#ev-g'), bride_name: v('#ev-b'),
-                    groom_name_latin: v('#ev-gl'), bride_name_latin: v('#ev-bl') };
+    const patch = { groom_family: v('#ev-gf'), groom_given: v('#ev-gg'), bride_family: v('#ev-bf'), bride_given: v('#ev-bg'),
+                    groom_name_latin: v('#ev-gl'), bride_name_latin: v('#ev-bl'), chart_title: v('#ev-title') };
     closeModal('m-ev');
     if (await saveEventSettings(patch)) { toast('基本情報を保存しました', 'ok'); renderSeating(); }
   });
