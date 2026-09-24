@@ -1,5 +1,5 @@
 /* Worker の単体テスト：Supabase と Auth を fetch のモックで置き換える */
-import worker from '../src/worker.js';
+import worker, { _resetSettingsCache } from '../src/worker.js';
 
 const G1 = '22222222-2222-4222-8222-222222222222', G_ABSENT = '22222222-2222-4222-8222-000000000002',
       G_NOSEAT = '22222222-2222-4222-8222-000000000003', G_DELETED = '22222222-2222-4222-8222-000000000004',
@@ -36,6 +36,7 @@ const db = {
           { table_id: 'tA', seat_index: 4, person_type: 'reply_person', person_id: 'p4' }, { table_id: 'tB', seat_index: 0, person_type: 'guest', person_id: G_PROV },
           { table_id: 'tA', seat_index: 3, person_type: 'reply_person', person_id: 'c1' }, { table_id: 'tB', seat_index: 1, person_type: 'reply_person', person_id: 'c2' }],
   tables: [{ id: 'tA', label: 'A' }, { id: 'tB', label: 'B' }],
+  settings: [{ key: 'reception_id_enabled', value: true }],
 };
 const log = [];
 globalThis.fetch = async (url, init = {}) => {
@@ -56,7 +57,7 @@ globalThis.fetch = async (url, init = {}) => {
     if (v === 'is.null') return r[k] == null; if (v === 'not.is.null') return r[k] != null;
     if (v.startsWith('eq.')) return String(r[k]) === decodeURIComponent(v.slice(3)); return true;
   }));
-  const src = { reception_tokens: db.tokens, guests: db.guests, reception_items: db.items, seating_assignments: db.seats, seating_tables: db.tables, replies_admin: db.replies, reply_people: db.people }[table] || [];
+  const src = { reception_tokens: db.tokens, guests: db.guests, reception_items: db.items, seating_assignments: db.seats, seating_tables: db.tables, replies_admin: db.replies, reply_people: db.people, app_settings: db.settings }[table] || [];
   if (init.method === 'PATCH') { const rows = filt(src); rows.forEach(r => Object.assign(r, JSON.parse(init.body))); return new Response(JSON.stringify(rows.map(pick))); }
   return new Response(JSON.stringify(filt(src).map(pick)));
 };
@@ -118,3 +119,22 @@ r = await req('/r/AbCdEfGh'); ok('expired code → 404', r.status === 404);
 // 6. other paths → assets
 r = await req('/index.html'); ok('other paths → assets', await r.text() === 'asset');
 ok('last_used_at written once', log.filter(x => x.startsWith('/rest/v1/reception_tokens') && log[log.indexOf(x) - 1] === 'PATCH').length >= 1);
+
+// v2.2: 受付IDの ON/OFF
+db.tokens[0].is_active = true; db.tokens[0].expires_at = null;
+r = await req('/api/reception/me', { headers: { cookie } }); b = await r.json();
+ok('v2.2: me has reception_id_enabled=true', b.reception_id_enabled === true);
+db.settings[0].value = false;
+r = await req('/api/reception/guests', { headers: { cookie } }); b = await r.json();
+ok('v2.2: settings are cached (still ON within 10s)', b.reception_id_enabled === true && 'reception_id' in b.guests[0]);
+_resetSettingsCache();
+r = await req('/api/reception/me', { headers: { cookie } }); b = await r.json();
+ok('v2.2: me reflects OFF after cache expiry', b.reception_id_enabled === false);
+r = await req('/api/reception/guests', { headers: { cookie } }); b = await r.json();
+ok('v2.2: guests omit reception_id when OFF', b.reception_id_enabled === false && !JSON.stringify(b).includes('12345') && !('reception_id' in b.guests[0]));
+db.settings[0].value = true; _resetSettingsCache();
+r = await req('/api/reception/guests', { headers: { cookie } }); b = await r.json();
+ok('v2.2: same reception_id returns when ON again', b.guests[0].reception_id === '12345');
+db.settings.length = 0; _resetSettingsCache();
+r = await req('/api/reception/me', { headers: { cookie } }); b = await r.json();
+ok('v2.2: missing setting defaults to ON', b.reception_id_enabled === true);

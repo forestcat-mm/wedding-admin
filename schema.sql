@@ -517,6 +517,14 @@ CREATE TABLE public.seating_assignments (
     CONSTRAINT seating_assignments_person_type_check CHECK ((person_type = ANY (ARRAY['reply_person'::text, 'guest'::text])))
 );
 
+-- ---------- app_settings ----------
+-- アプリの設定（key → jsonb）。reception_id_enabled：受付IDを使うか（初期値 true。管理画面の「受付設定」で切り替え）
+CREATE TABLE public.app_settings (
+    key text NOT NULL,
+    value jsonb NOT NULL
+);
+INSERT INTO public.app_settings (key, value) VALUES ('reception_id_enabled', 'true'::jsonb) ON CONFLICT (key) DO NOTHING;
+
 -- ---------- reception_items ----------
 -- 受付：招待者ごとの引き渡し物（席次表・お車代など）
 CREATE TABLE public.reception_items (
@@ -630,6 +638,8 @@ ALTER TABLE ONLY public.seating_tables
     ADD CONSTRAINT seating_tables_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY public.seating_assignments
     ADD CONSTRAINT seating_assignments_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.app_settings
+    ADD CONSTRAINT app_settings_pkey PRIMARY KEY (key);
 ALTER TABLE ONLY public.reception_items
     ADD CONSTRAINT reception_items_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY public.reception_tokens
@@ -716,6 +726,7 @@ ALTER TABLE public.budget_external ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.event_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.seating_tables ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.seating_assignments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.app_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.reception_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.reception_tokens ENABLE ROW LEVEL SECURITY;
 
@@ -740,6 +751,7 @@ CREATE POLICY "admin all" ON public.budget_external TO authenticated USING (true
 CREATE POLICY "admin all" ON public.event_settings TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "admin all" ON public.seating_tables TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "admin all" ON public.seating_assignments TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "admin all" ON public.app_settings TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "admin all" ON public.reception_items TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "admin all" ON public.reception_tokens TO authenticated USING (true) WITH CHECK (true);
 

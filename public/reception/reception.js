@@ -17,7 +17,7 @@ const SIDES = ['groom', 'bride', 'all'];
 const SIDE_LABEL = { groom: '新郎側', bride: '新婦側' };
 const SIDE_KEY = 'rcpt_side';
 
-const R = { guests: [], q: '', filter: 'all', side: 'all', me: null, queue: [], pendingIds: new Set(), timer: null, retry: null, hit: null };
+const R = { guests: [], q: '', filter: 'all', side: 'all', me: null, queue: [], pendingIds: new Set(), timer: null, retry: null, hit: null, ridOn: true };
 
 /* ---------------- API ---------------- */
 async function authHeaders() {
@@ -47,6 +47,7 @@ async function boot() {
   }
   $('#app').hidden = false;
   $('#who').textContent = `操作者：${R.me.label}${R.me.via === 'admin' ? '（管理者）' : ''}`;
+  setRidOn(R.me.reception_id_enabled !== false);
   /* v2: サイドの初期値。端末で切り替えた値 → トークンの既定 → all */
   let saved = null;
   try { saved = localStorage.getItem(SIDE_KEY); } catch {}
@@ -59,7 +60,8 @@ async function boot() {
 }
 async function load() {
   try {
-    const { guests } = await api('guests');
+    const { guests, reception_id_enabled } = await api('guests');
+    if (reception_id_enabled !== undefined) setRidOn(reception_id_enabled !== false);   /* v2.2: 10 秒ごとの同期で ON/OFF を反映 */
     /* 未送信の操作がある人は、サーバーの値で上書きしない */
     R.guests = guests.map(g => R.pendingIds.has(g.id) ? (R.guests.find(x => x.id === g.id) || g) : g);
     render();
@@ -74,6 +76,13 @@ const fmtT = iso => iso ? new Date(iso).toLocaleTimeString('ja-JP', { hour: '2-d
 const fullName = g => `${g.family_name ?? ''} ${g.given_name ?? ''}`.trim();
 const latin = g => `${g.family_name_latin ?? ''} ${g.given_name_latin ?? ''}`.trim().toUpperCase();
 const inSide = g => R.side === 'all' || g.side === R.side;
+/* v2.2: 受付IDの ON/OFF。OFF では番号を出さず、5桁の完全一致と Enter での受付も無効 */
+function setRidOn(on) {
+  if (R.ridOn === on) return;
+  R.ridOn = on;
+  $('#q').placeholder = on ? '受付ID（5桁）または お名前' : 'お名前で検索';
+}
+const ridQuery = q => R.ridOn && /^\d{5}$/.test(q);
 const isPC = () => window.matchMedia('(min-width: 1024px)').matches;
 
 function paintSide() {
@@ -84,7 +93,7 @@ const compMatch = (c, q) => !!q && !/^\d{5}$/.test(q) && norm(fullName(c) + ' ' 
 function matchesQuery(g) {
   const q = R.q.trim();
   if (!q) return true;
-  if (/^\d{5}$/.test(q)) return g.reception_id === q;            /* 5桁＝受付IDの完全一致 */
+  if (ridQuery(q)) return g.reception_id === q;                    /* 5桁＝受付IDの完全一致（ON のときだけ） */
   return norm(fullName(g) + ' ' + latin(g)).includes(norm(q)) || (g.companions || []).some(c => compMatch(c, q));
 }
 function matchesFilter(g) {
@@ -93,7 +102,8 @@ function matchesFilter(g) {
   return true;
 }
 const order = (a, b) => (a.checked_in_at ? 1 : 0) - (b.checked_in_at ? 1 : 0)
-  || (a.reception_id || '99999').localeCompare(b.reception_id || '99999');
+  || (R.ridOn ? (a.reception_id || '99999').localeCompare(b.reception_id || '99999') : 0)
+  || latin(a).localeCompare(latin(b), 'en');
 
 function render() {
   /* v2: 母数は選択中のサイド */
@@ -106,7 +116,7 @@ function render() {
   const other = q && R.side !== 'all'
     ? R.guests.filter(g => !inSide(g) && matchesQuery(g) && matchesFilter(g)).sort(order) : [];
   /* 5桁で1件だけ一致したらその行を強調する（Enter で受付） */
-  R.hit = /^\d{5}$/.test(q) && main.length + other.length === 1 ? (main[0] || other[0]) : null;
+  R.hit = ridQuery(q) && main.length + other.length === 1 ? (main[0] || other[0]) : null;
 
   const pc = isPC();
   const rowsHTML = list => pc ? list.map(rowHTML).join('') : list.map(card).join('');
@@ -157,7 +167,7 @@ function card(g) {
   const items = itemsHTML(g);
   return `<article class="card ${cls(g)}" data-id="${esc(g.id)}">
     <div class="info">
-      <div class="rid${g.reception_id ? '' : ' none'}">${g.reception_id ? esc(g.reception_id) : '受付ID未発番'}</div>
+      ${R.ridOn ? `<div class="rid${g.reception_id ? '' : ' none'}">${g.reception_id ? esc(g.reception_id) : '受付ID未発番'}</div>` : ''}
       <div class="nm">${esc(fullName(g)) || '（名前なし）'} ${sideBadge(g)}${countBadge(g)}<small>${esc(latin(g))}</small></div>
       ${compsHTML(g)}
       <div class="tb">${g.table ? `卓 <b>${esc(g.table)}</b>${g.seat ? `　席 ${g.seat}` : ''}` : '卓：未定'}</div>
@@ -169,15 +179,16 @@ function card(g) {
 }
 /* PC：表 */
 function tableHTML(mainRows, otherRows) {
-  return `<table class="gt"><thead><tr><th class="c-rid">受付ID</th><th>氏名</th><th class="c-side">サイド</th><th class="c-tb">卓・席</th><th>お渡し物</th><th class="c-chk">受付状態</th></tr></thead>
+  const cols = R.ridOn ? 6 : 5;
+  return `<table class="gt"><thead><tr>${R.ridOn ? '<th class="c-rid">受付ID</th>' : ''}<th>氏名</th><th class="c-side">サイド</th><th class="c-tb">卓・席</th><th>お渡し物</th><th class="c-chk">受付状態</th></tr></thead>
     <tbody>${mainRows}</tbody>
-    ${otherRows ? `<tbody class="others"><tr class="sep"><td colspan="6">${SIDE_LABEL[R.side === 'groom' ? 'bride' : 'groom']}の該当者</td></tr>${otherRows}</tbody>` : ''}
+    ${otherRows ? `<tbody class="others"><tr class="sep"><td colspan="${cols}">${SIDE_LABEL[R.side === 'groom' ? 'bride' : 'groom']}の該当者</td></tr>${otherRows}</tbody>` : ''}
   </table>`;
 }
 function rowHTML(g) {
   const items = itemsHTML(g);
   return `<tr class="${cls(g)}" data-id="${esc(g.id)}">
-    <td class="c-rid"><span class="rid${g.reception_id ? '' : ' none'}">${g.reception_id ? esc(g.reception_id) : '未発番'}</span></td>
+    ${R.ridOn ? `<td class="c-rid"><span class="rid${g.reception_id ? '' : ' none'}">${g.reception_id ? esc(g.reception_id) : '未発番'}</span></td>` : ''}
     <td class="c-nm"><b>${esc(fullName(g)) || '（名前なし）'}</b>${countBadge(g)}<small>${esc(latin(g))}</small>${compsHTML(g)}</td>
     <td class="c-side">${sideBadge(g)}</td>
     <td class="c-tb">${g.table ? `<b>${esc(g.table)}</b>${g.seat ? ` <small>席 ${g.seat}</small>` : ''}` : '<small>未定</small>'}</td>

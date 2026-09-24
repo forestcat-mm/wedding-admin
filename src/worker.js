@@ -16,6 +16,7 @@ const COOKIE = 'rcpt';
 const SIDES = ['groom', 'bride', 'all'];
 const COOKIE_DEFAULT_DAYS = 7;
 const LAST_USED_MIN_INTERVAL_MS = 60 * 1000;   /* last_used_at は最長1分に1回 */
+const SETTINGS_CACHE_MS = 10 * 1000;           /* app_settings の読み込みは最大 10 秒キャッシュ */
 
 export default {
   async fetch(request, env, ctx) {
@@ -127,6 +128,23 @@ async function tokenById(env, id) {
   return rows[0] || null;
 }
 
+/* ---------------- 設定（app_settings） ---------------- */
+let settingsCache = { at: 0, values: {} };
+async function appSettings(env) {
+  if (Date.now() - settingsCache.at < SETTINGS_CACHE_MS) return settingsCache.values;
+  const rows = await sbGet(env, 'app_settings?select=key,value');
+  const values = {};
+  for (const r of rows) values[r.key] = r.value;
+  settingsCache = { at: Date.now(), values };
+  return values;
+}
+/* 受付IDを使うか（既定 true） */
+async function receptionIdEnabled(env) {
+  const v = (await appSettings(env)).reception_id_enabled;
+  return v === undefined || v === null ? true : v === true;
+}
+export const _resetSettingsCache = () => { settingsCache = { at: 0, values: {} }; };
+
 /* GET /r/:code */
 async function shortLink(request, env, url) {
   const code = url.pathname.slice(3).replace(/\/+$/, '');
@@ -192,11 +210,16 @@ async function receptionApi(request, env, url, ctx) {
 
   if (rest === 'me') {
     if (request.method !== 'GET') return noStore(json({ error: 'method' }, 405));
-    return noStore(json({ ok: true, via: who.via, label: who.label, default_side: who.defaultSide || 'all' }));
+    return noStore(json({ ok: true, via: who.via, label: who.label, default_side: who.defaultSide || 'all',
+                          reception_id_enabled: await receptionIdEnabled(env) }));
   }
   if (rest === 'guests') {
     if (request.method !== 'GET') return noStore(json({ error: 'method' }, 405));
-    return noStore(json({ ok: true, guests: await guestList(env), now: new Date().toISOString() }));
+    /* v2.2: 受付IDが OFF のときはレスポンスに含めない（画面を開いたままでも 10 秒ごとの同期で反映される） */
+    const ridOn = await receptionIdEnabled(env);
+    const guests = await guestList(env);
+    if (!ridOn) for (const g of guests) delete g.reception_id;
+    return noStore(json({ ok: true, guests, reception_id_enabled: ridOn, now: new Date().toISOString() }));
   }
   if (rest === 'checkin') {
     if (request.method !== 'POST') return noStore(json({ error: 'method' }, 405));

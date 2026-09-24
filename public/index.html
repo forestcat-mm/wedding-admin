@@ -165,6 +165,11 @@
 <!-- ===== RECEPTION TOKENS ===== -->
 <section class="view" id="v-reception">
   <h2>受付トークン</h2>
+  <div class="panel">
+    <div class="row" style="margin:0"><b>受付設定</b>
+      <label class="chk1"><input type="checkbox" id="rs-rid"><span>受付IDを使う</span></label>
+      <span class="note">OFF にすると、管理画面・受付画面・API のどこにも受付IDを出しません（採番は続き、ON に戻すと同じ番号が表示されます）。受付画面には 10 秒以内に反映されます。</span></div>
+  </div>
   <p class="sub">当日の受付端末用のリンクを発行します。リンクを開いた端末は <code>/reception/</code> だけを使えます（他の管理ページは開けません）。無効化すると、その端末は次の操作から使えなくなります。</p>
   <div class="panel">
     <div class="row"><b>発行</b>

@@ -218,7 +218,11 @@ const S = {
   titles: [],                       // A1: 肩書きの選択肢（title_options）
   items: [], itemsOfGuest: new Map(),   // 受付：お渡し物（reception_items）
   tokens: [],                          // 受付トークン
+  settings: {},                        // app_settings（key → value）
 };
+/* v2.2: 受付IDを使うか（app_settings.reception_id_enabled、既定 true） */
+const ridOn = () => S.settings.reception_id_enabled !== false;
+const SETTINGS_LOG_ID = '00000000-0000-4000-8000-00000000a5e7';   /* change_log.target_id は uuid なので設定用に固定の値を使う */
 
 /* ============================== A. 肩書き ============================== */
 /* A2: 同行者の肩書きは固定の4つ（空＝なし） */
@@ -334,11 +338,14 @@ async function loadAll() {
     sb.from('reply_people').select('*').order('idx'),
     sb.from('share_links').select('*'),
     sb.from('reception_items').select('*').order('sort').order('created_at'),
+    sb.from('app_settings').select('*'),
   ];
   const res = await Promise.all(q);
   const bad = res.find(r => r.error);
   if (bad) { toast('読み込みに失敗しました：' + bad.error.message, 'err'); return; }
-  [S.guests, S.circles, S.guestCircles, S.replies, S.people, S.shares, S.items] = res.map(r => r.data || []);
+  [S.guests, S.circles, S.guestCircles, S.replies, S.people, S.shares, S.items] = res.slice(0, 7).map(r => r.data || []);
+  S.settings = Object.fromEntries((res[7].data || []).map(r => [r.key, r.value]));
+  $('#rs-rid').checked = ridOn();
   await loadTitles();
   await loadEventSettings();       // 基本情報（新郎新婦の名前・全体の申し送り）
   index();
@@ -784,7 +791,7 @@ function passFilter(row, f) {
   if (row.kind === 'companion') return true;   // 親で判定
   const g = row.guest, r = row.reply, p = row.person;
   if (f.q) {
-    const hay = norm([fullName(g), latinName(g), g?.email, g?.messenger_id, g?.reception_id,
+    const hay = norm([fullName(g), latinName(g), g?.email, g?.messenger_id, ridOn() ? g?.reception_id : '',
       fullName(p), latinName(p), r?.email, r?.messenger].join(' '));
     if (!hay.includes(norm(f.q))) return false;
   }
@@ -995,7 +1002,7 @@ function receptionCell(g) {
   if (!g) return '';
   const items = S.itemsOfGuest.get(g.id) || [];
   const left = items.filter(i => !i.handed_at).length;
-  return `<b>${esc(g.reception_id || '—')}</b>`
+  return (ridOn() ? `<b>${esc(g.reception_id || '—')}</b>` : '')
     + (g.checked_in_at ? `<span class="tag ok" title="${esc(g.checked_in_by || '')}">受付済 ${esc(fmtDT(g.checked_in_at).slice(-5))}</span>` : '<small>未受付</small>')
     + (items.length ? `<small>${left ? `未渡し ${left}/${items.length}` : `お渡し済 ${items.length}`}</small>` : '');
 }
@@ -1195,7 +1202,7 @@ function guestTabHTML(g) {
       <input id="gf-gift" list="gf-giftlist" value="${esc(g?.gift_note || '')}" placeholder="品目名（自由入力可）">
       <datalist id="gf-giftlist">${extNames().map(n => `<option value="${esc(n)}"></option>`).join('')}</datalist></div>
     <div class="f"><label>メモ</label><textarea id="gf-note" rows="2">${esc(g?.note || '')}</textarea></div>
-    <div class="f"><label>受付でお渡しする物${g?.reception_id ? `　<span class="note">受付ID ${esc(g.reception_id)}${g.checked_in_at ? '・受付済 ' + esc(fmtDT(g.checked_in_at)) : ''}</span>` : ''}</label>
+    <div class="f"><label>受付でお渡しする物${g ? `　<span class="note">${ridOn() && g.reception_id ? '受付ID ' + esc(g.reception_id) : ''}${g.checked_in_at ? (ridOn() && g.reception_id ? '・' : '') + '受付済 ' + esc(fmtDT(g.checked_in_at)) : ''}</span>` : ''}</label>
       <div class="rcitems" id="gf-items">${(g ? (S.itemsOfGuest.get(g.id) || []) : []).map(itemRowHTML).join('')}
         <div class="add"><select id="gf-item-preset">${RC_PRESETS.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('')}</select>
           <button type="button" class="btn s o" id="gf-item-add">＋ 追加</button>
@@ -5995,6 +6002,17 @@ async function openQR(code) {
   } catch (e) { $$('.note', box)[1].textContent = 'QR の生成に失敗しました：' + (e?.message || e); }
 }
 $('#rt-noexp').addEventListener('change', e => { $('#rt-exp').disabled = e.target.checked; });
+/* v2.2: 受付IDの ON/OFF。すぐ app_settings に保存し、change_log にも記録する */
+$('#rs-rid').addEventListener('change', async e => {
+  const on = e.target.checked, before = ridOn();
+  const { error } = await sb.from('app_settings').upsert({ key: 'reception_id_enabled', value: on }, { onConflict: 'key' });
+  if (error) { toast('受付設定の保存に失敗：' + error.message, 'err'); e.target.checked = before; return; }
+  S.settings.reception_id_enabled = on;
+  await logChange('app_settings', SETTINGS_LOG_ID, 'edit', on ? '受付IDを使う' : '受付IDを使わない',
+    { key: 'reception_id_enabled', before: { value: before }, after: { value: on } });
+  toast(on ? '受付IDを使います' : '受付IDを使いません。受付画面には10秒以内に反映されます', 'ok');
+  renderGuests();
+});
 $('#rt-issue').addEventListener('click', async () => {
   const label = $('#rt-label').value.trim();
   if (!label) { toast('ラベルを入れてください', 'err'); return; }
