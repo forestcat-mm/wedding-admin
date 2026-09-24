@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Wedding Reception</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23F4F0EA'/%3E%3Ctext x='16' y='22' font-size='16' font-family='Georgia,serif' text-anchor='middle' fill='%232B2B2B'%3EM%3C/text%3E%3C/svg%3E">
+<style>
+:root{--bg:#F4F0EA;--ink:#2B2B2B;--ink2:#6F665E;--line:#E2DAD0;--enji:#8E1728;
+  --serif:"Hiragino Mincho ProN","Yu Mincho",Georgia,serif;
+  --display:"Didot","Bodoni 72",Georgia,serif;
+  --sans:-apple-system,"Hiragino Sans","Yu Gothic",Helvetica,Arial,sans-serif}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--serif);
+  font-size:14px;line-height:1.9;-webkit-text-size-adjust:100%}
+.wrap{max-width:380px;margin:0 auto;padding:38px 20px 60px}
+.t{font-family:var(--display);letter-spacing:.3em;font-size:11px;color:var(--ink2);text-align:center;margin:0}
+h1{font-weight:500;text-align:center;margin:6px 0 16px;letter-spacing:.1em;font-size:19px}
+.sub{text-align:center;font-size:12px;color:var(--ink2);margin:0 0 18px;font-family:var(--sans)}
+.box{background:#fff;border:1px solid var(--line);padding:22px 18px}
+label{display:block;font-size:11px;color:var(--ink2);font-family:var(--sans);margin-bottom:4px}
+input{width:100%;border:1px solid var(--line);padding:10px;font:inherit;font-size:15px;background:#fff}
+button{width:100%;background:var(--ink);color:#fff;border:0;padding:12px;letter-spacing:.2em;
+  cursor:pointer;font-family:var(--sans);font-size:13px;margin-top:12px}
+.msg{color:var(--enji);font-size:12px;font-family:var(--sans);min-height:1.3em;margin:10px 0 0;text-align:center}
+.ptabs{display:flex;border-bottom:1px solid var(--line);margin-bottom:8px}
+.ptabs button{flex:1;background:none;border:0;padding:9px;font-family:var(--serif);color:var(--ink2);
+  border-bottom:2px solid transparent;cursor:pointer;margin:0;letter-spacing:.05em;font-size:14px}
+.ptabs button.on{color:var(--ink);border-color:var(--enji)}
+.ptabs b{font-family:var(--display);font-weight:400;margin-left:4px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+td{padding:7px 4px;border-bottom:1px solid #F0EBE3}
+td.lat{text-align:right;font-family:var(--display);font-size:11px;color:var(--ink2);letter-spacing:.08em}
+.order{text-align:center;font-size:10.5px;color:var(--ink2);margin:10px 0 0;font-family:var(--sans)}
+.info{text-align:center;font-family:var(--serif);font-size:11.5px;line-height:1.85;
+  color:var(--ink2);margin:0 0 16px}
+.info span{display:block}
+.foot{text-align:center;font-size:11px;color:var(--ink2);margin:16px 0 0;font-family:var(--sans)}
+.hide{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="t">WEDDING RECEPTION</p>
+  <h1 id="ttl">ゲスト一覧</h1>
+  <p class="info">
+    <span>2026年9月26日（土）</span>
+    <span>リーガロイヤルホテル東京　ロイヤルホール</span>
+    <span>受付 10:30 ／ 開宴 11:00</span>
+  </p>
+  <p class="sub" id="sub">パスワードを入力してください</p>
+
+  <div class="box" id="gate">
+    <label for="pw">パスワード</label>
+    <input id="pw" type="password" autocomplete="off">
+    <button id="go">表示する</button>
+    <p class="msg" id="msg"></p>
+  </div>
+
+  <div class="box hide" id="list">
+    <div class="ptabs">
+      <button class="on" data-t="yes">出席 <b id="n-yes">0</b></button>
+      <button data-t="no">欠席 <b id="n-no">0</b></button>
+    </div>
+    <table id="t-yes"><tbody></tbody></table>
+    <table id="t-no" class="hide"><tbody></tbody></table>
+    <p class="order">アルファベット順に表示しています</p>
+    <p class="foot">回答済みの方のみ表示しています</p>
+  </div>
+</div>
+<script type="module">
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+const sb = createClient('https://cvnqnvnppvfhwmrehagt.supabase.co',
+                        'sb_publishable_ZYwTP155dx57wEopKpezNA_LR1IOjID');
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
+  ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+const token = new URLSearchParams(location.search).get('t') || '';
+if (!token) { $('#msg').textContent = 'リンクが正しくありません'; $('#go').disabled = true; }
+
+$('#go').addEventListener('click', run);
+$('#pw').addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
+
+async function run() {
+  const msg = $('#msg'); msg.textContent = '';
+  const pw = $('#pw').value;
+  if (!pw) { msg.textContent = 'パスワードが違います'; return; }
+  $('#go').disabled = true;
+  const { data, error } = await sb.rpc('share_lookup', { p_token: token, p_password: pw });
+  $('#go').disabled = false;
+  $('#pw').value = '';                       // パスワードは保持しない
+  if (error) { msg.textContent = 'パスワードが違います'; return; }
+  const rows = data || [];
+  const head = rows[0] || {};
+  const fallback = head.circle_name ? head.circle_name + 'のみなさま' : 'ゲスト一覧';
+  const title = (head.page_title || '').trim() || fallback;
+  $('#ttl').textContent = title;
+  document.title = title;
+  $('#sub').textContent = head.headline || '9月26日（土）ロイヤルホール';
+  const showLatin = head.show_latin !== false;
+  /* ローマ字姓→名の昇順。ローマ字が空の行は末尾に漢字順で置く */
+  const key = r => ((r.family_name_latin || '') + ' ' + (r.given_name_latin || '')).trim().toUpperCase();
+  const kanji = r => ((r.family_name || '') + ' ' + (r.given_name || '')).trim();
+  const byName = (a, b) => {
+    const ka = key(a), kb = key(b);
+    if (ka && kb) return ka.localeCompare(kb, 'en');
+    if (ka) return -1;
+    if (kb) return 1;
+    return kanji(a).localeCompare(kanji(b), 'ja');
+  };
+  const yes = rows.filter(r => r.attending === true).sort(byName);
+  const no  = rows.filter(r => r.attending === false).sort(byName);
+  const tr = r => `<tr><td>${esc(((r.family_name || '') + ' ' + (r.given_name || '')).trim())}</td>` +
+    (showLatin ? `<td class="lat">${esc(((r.family_name_latin || '') + ' ' + (r.given_name_latin || '')).trim().toUpperCase())}</td>` : '') +
+    `</tr>`;
+  $('#n-yes').textContent = yes.length;
+  $('#n-no').textContent = no.length;
+  $('#t-yes tbody').innerHTML = yes.map(tr).join('') || '<tr><td>まだいません</td></tr>';
+  $('#t-no tbody').innerHTML  = no.map(tr).join('')  || '<tr><td>まだいません</td></tr>';
+  $('#gate').classList.add('hide');
+  $('#list').classList.remove('hide');
+}
+document.querySelectorAll('.ptabs button').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('.ptabs button').forEach(x => x.classList.toggle('on', x === b));
+  $('#t-yes').classList.toggle('hide', b.dataset.t !== 'yes');
+  $('#t-no').classList.toggle('hide', b.dataset.t !== 'no');
+}));
+</script>
+</body>
+</html>

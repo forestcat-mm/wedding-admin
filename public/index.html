@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<title>RSVP Admin</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23F4F0EA'/%3E%3Ctext x='16' y='22' font-size='16' font-family='Georgia,serif' text-anchor='middle' fill='%232B2B2B'%3EM%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="login"><div class="lbox">
+  <p class="t">WEDDING RSVP</p><h1>管理画面</h1>
+  <p class="msg" id="loginmsg"></p>
+  <input id="lg-id" type="text" placeholder="ID" autocomplete="username" autocapitalize="off" spellcheck="false">
+  <input id="lg-pw" type="password" placeholder="パスワード" autocomplete="current-password">
+  <button id="lg-go">ログイン</button>
+</div></div>
+
+<header><div class="hd">
+  <div class="brand">RSVP ADMIN<small>M &amp; T — 2026.9.26</small></div>
+  <nav id="nav">
+    <button class="on" data-v="dash">ダッシュボード</button>
+    <button data-v="guests">ゲスト一覧</button>
+    <button data-v="photos">投稿写真</button>
+    <button data-v="budget">予算</button>
+    <button data-v="seating">配席</button>
+    <button data-v="circles">友人圏・シェア</button>
+  </nav>
+  <div class="me"><span id="me-mail"></span> ｜ <button class="btn link" id="logout">ログアウト</button></div>
+</div></header>
+
+<main>
+
+<!-- ===== DASHBOARD ===== -->
+<section class="view on" id="v-dash">
+  <h2>ダッシュボード</h2>
+  <p class="sub" id="d-sub"></p>
+  <div class="alert" id="d-dup" hidden></div>
+  <div class="cards" id="d-cards"></div>
+  <div class="grid2">
+    <div class="panel">
+      <b>新郎友人・新婦友人</b>
+      <div class="donutwrap" id="d-donut"></div>
+      <div id="d-sidebars"></div>
+      <div class="cards budgetcards" id="d-budget"></div>
+    </div>
+    <div class="panel">
+      <b>回答の進み</b>
+      <div id="d-progress"></div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="row" style="margin-bottom:6px"><b>友人圏別の回答状況</b><span class="sp"></span>
+      <span class="legend h"><span><i style="background:var(--ok)"></i>出席</span><span><i style="background:var(--enji)"></i>欠席</span><span><i style="background:#E2DAD0"></i>未回答</span></span></div>
+    <div class="hbars" id="d-circles"></div>
+    <p class="note" style="margin:8px 0 0">行をクリックすると、その友人圏で絞り込んだゲスト一覧へ。</p>
+  </div>
+  <div class="panel"><b>直近の回答</b>
+    <div class="tblwrap"><table style="margin-top:8px">
+      <thead><tr><th>受信</th><th>氏名</th><th>出欠</th><th>人数</th><th>Side</th><th>友人圏</th><th>言語</th></tr></thead>
+      <tbody id="d-recent"></tbody></table></div>
+  </div>
+</section>
+
+<!-- ===== GUESTS ===== -->
+<section class="view" id="v-guests">
+  <h2>ゲスト一覧</h2>
+  <p class="sub">招待リスト（＝打診済み）と回答を1つの表で。同行者は本人の下に1行ずつ。黄色い行は同姓同名の招待者が複数いるため、手動で選んでください。</p>
+  <div class="panel">
+    <div class="row">
+      <input id="g-q" placeholder="氏名・メールで検索" style="width:180px">
+      <select id="g-circle"><option value="">友人圏：すべて</option></select>
+      <select id="g-reply"><option value="">回答：すべて</option><option value="none">未回答</option><option value="yes">出席</option><option value="no">欠席</option><option value="unmatched">未紐付の回答</option><option value="dupreply">重複回答のみ</option></select>
+      <select id="g-match"><option value="">紐付：すべて</option><option value="unmatched">未紐付</option><option value="auto">自動紐付</option><option value="manual">手動紐付</option><option value="unlisted">招待リスト外</option></select>
+      <select id="g-join"><option value="">加入：すべて</option><option value="line">LINE未登録</option><option value="wechat">WeChat未加入</option><option value="dup">重複のみ</option></select>
+      <select id="g-sort"><option value="updated">並び：最終更新順</option><option value="received">並び：受信日時順</option><option value="name">並び：氏名（ローマ字）順</option></select>
+      <select id="g-show"><option value="live">表示：有効のみ</option><option value="deleted">削除済みのみ</option><option value="all">すべて</option></select>
+      <label><input type="checkbox" id="g-comp" checked> 同行者を表示</label>
+      <span class="sp"></span>
+      <button class="btn o s" id="g-tpl">テンプレートCSV</button>
+      <button class="btn o s" id="g-csvin">招待リストCSVアップロード</button>
+      <button class="btn s" id="g-add">＋ 招待者を追加</button>
+      <button class="btn link" id="g-colreset" title="ドラッグで変えた列幅を初期値に戻します">列幅をリセット</button>
+    </div>
+    <div class="bulk" id="bulk"><b><span id="bulkn">0</span> 件選択</b>
+      <button class="btn s enji" id="bulk-del">削除</button>
+      <button class="btn s o" id="bulk-edit">一括編集</button>
+      <button class="btn s o" id="bulk-tag">友人圏タグを付ける</button>
+      <button class="btn s o" id="bulk-line">LINE登録済にする</button>
+      <button class="btn s o" id="bulk-wechat">WeChat加入済にする</button>
+      <button class="btn s o" id="bulk-reply">回答を登録（出席／欠席）</button>
+      <button class="btn s o" id="bulk-csv">CSVダウンロード</button>
+      <button class="btn s o" id="bulk-restore" style="display:none">復元</button>
+      <span class="sp"></span><button class="btn link" id="bulkclear">選択解除</button></div>
+    <div class="stabrow">
+      <div class="stabs" id="g-stabs"></div>
+      <div class="slegend"><span class="sw g"></span>新郎友人<span class="sw b"></span>新婦友人<span class="sw n"></span>未設定</div>
+    </div>
+    <div class="pager" id="g-pager-top"></div>
+    <div class="tblwrap"><table class="gtbl" id="g-table"><colgroup>
+      <col class="c-chk"><col class="c-name"><col class="c-att"><col class="c-contact">
+      <col class="c-diet"><col class="c-link"><col class="c-join"><col class="c-memo">
+      <col class="c-act"></colgroup>
+      <thead><tr>
+      <th><input type="checkbox" id="chkall"></th>
+      <th data-col="c-name">氏名<span class="rsz"></span></th>
+      <th data-col="c-att" class="ctr">出欠・区分<span class="rsz"></span></th>
+      <th data-col="c-contact">連絡先<span class="rsz"></span></th>
+      <th data-col="c-diet">アレルギー・食事制限<span class="rsz"></span></th>
+      <th data-col="c-link" title="招待状回答との紐付け">招待状回答紐付<span class="rsz"></span></th>
+      <th data-col="c-join" class="ctr" title="公式LINEアカウント登録・WeChatグループ加入">公式登録<span class="rsz"></span></th>
+      <th data-col="c-memo">メモ・写真<span class="rsz"></span></th>
+      <th></th></tr></thead>
+      <tbody id="g-body"></tbody></table></div>
+    <div class="pager" id="g-pager-bot"></div>
+    <p class="note" style="margin:10px 0 0" id="g-count"></p>
+  </div>
+</section>
+
+<!-- ===== PHOTOS ===== -->
+<section class="view" id="v-photos">
+  <h2>投稿写真</h2>
+  <p class="sub">回答に添付された写真。非公開バケットから署名付きURLで表示（ログイン中のみ）。</p>
+  <div class="panel">
+    <div class="row">
+      <input id="p-q" placeholder="投稿者名で検索" style="width:180px">
+      <select id="p-side"><option value="">Side：すべて</option><option value="groom">新郎側</option><option value="bride">新婦側</option></select>
+      <select id="p-circle"><option value="">友人圏：すべて</option></select>
+      <select id="p-sort"><option value="new">並び：新しい順</option><option value="old">古い順</option><option value="name">投稿者名順</option></select>
+      <label><input type="checkbox" id="p-del"> 削除済み回答の写真も表示</label>
+      <span class="sp"></span>
+      <label><input type="checkbox" id="pall"> 全選択</label>
+      <button class="btn s" id="pdl" disabled>選択した <span id="pn">0</span> 枚をダウンロード（ZIP）</button>
+    </div>
+    <div class="tiles" id="p-tiles"></div>
+    <p class="note" style="margin:10px 0 0" id="p-count"></p>
+  </div>
+</section>
+
+<!-- ===== CIRCLES / SHARE ===== -->
+<section class="view" id="v-circles">
+  <h2>友人圏・シェア</h2>
+  <p class="sub">友人圏タグの管理と、友人圏ごとの「誰が来るか」だけを見せる共有ページの発行。</p>
+  <div class="panel">
+    <div class="row"><b>友人圏タグ</b><span class="sp"></span>
+      <input id="c-new" placeholder="新しいタグ名" style="width:160px"><button class="btn s" id="c-add">追加</button></div>
+    <div class="tblwrap"><table><thead><tr><th>タグ</th><th>人数</th><th>出席 / 欠席 / 未回答</th><th>シェアページ</th><th></th></tr></thead>
+      <tbody id="c-body"></tbody></table></div>
+    <p class="note" style="margin:10px 0 0">シェアページに出るのは回答済みゲストの「氏名（漢字・ローマ字）」だけで、出席・欠席はタブで分かれます。未回答者は表示されません。連絡先・アレルギー・同行者の詳細は出ません。パスワードは友人圏ごとに設定し、いつでも無効化できます。</p>
+  </div>
+</section>
+
+<!-- ===== SEATING ===== -->
+<section class="view" id="v-seating">
+  <h2>配席</h2>
+  <p class="sub">卓数を選ぶと会場レイアウトを自動生成します（最大3行×4列・高砂は最前面中央）。右の未配席リストから卓へドラッグして配席します。タッチ端末では、人をタップして選び、卓をタップしても配席できます。</p>
+
+  <div class="panel seatbar">
+    <div class="row" style="margin:0">
+      <span class="sstat"><em id="sv-done">0</em><small>配席済み</small><small class="of">出席 <em id="sv-att">0</em> 名中</small></span>
+      <span class="sstat"><em id="sv-un">0</em><small>未配席</small></span>
+      <span class="sstat"><em id="sv-prov">0</em><small>仮配席</small></span>
+      <span class="sstat warnv"><em id="sv-over">0</em><small>定員超過の卓</small></span>
+      <button class="btn link sstat-btn" id="sv-stale" hidden>要確認 <b>0</b> 名</button>
+      <span class="sp"></span>
+      <div class="vtog" id="sv-view" role="group" aria-label="表示形式">
+        <button data-v="round" class="on">円卓表示</button><button data-v="list">表形式表示</button></div>
+      <label class="cntbox">卓数
+        <select id="sv-count"></select></label>
+      <span class="cntnote"><b id="sv-avg">1卓あたり平均 — 名</b><small id="sv-min"></small></span>
+      <button class="btn s" id="sv-bulk">一括配席</button>
+      <button class="btn s" id="sv-swap" title="卓を2つ選んで、配席をまるごと入れ替えます">卓を入れ替え</button>
+      <label class="lockbox" title="誤操作防止。オフにすると卓そのものをドラッグして動かせます"><input type="checkbox" id="sv-lock" checked> レイアウトを固定</label>
+      <button class="btn o s" id="sv-dl">座席表ダウンロード</button>
+      <button class="btn o s" id="sv-gdl">ゲスト向け座席表</button>
+      <button class="btn o s" id="sv-csv">配席CSV</button>
+      <button class="btn o s" id="sv-fold" title="サイドバーの折りたたみ">サイドバーを隠す</button>
+    </div>
+    <div class="row swapbar" id="sv-swapbar" hidden>
+      <span id="sv-swapnote" class="note"></span><span class="sp"></span>
+      <button class="btn s" id="sv-swapgo" disabled>入れ替え</button>
+      <button class="btn link" id="sv-swapquit">やめる</button>
+    </div>
+  </div>
+
+  <div class="seatwrap" id="sv-wrap">
+    <div class="panel canvaspanel">
+      <div class="canvashead">
+        <b>会場レイアウト</b>
+        <span class="note" id="sv-venue"></span>
+        <span class="sp"></span>
+        <button class="btn s o" id="sv-add" title="卓数を1つ増やします">＋ 卓を追加</button>
+      </div>
+      <div class="canvasbox" id="sv-box"></div>
+      <p class="note" style="margin:8px 0 0">卓をダブルクリック（タッチは長押し）で卓名・定員・形・メモ・卓の入れ替えを編集。📝はメモ付きの卓で、ホバーすると内容が出ます。席にカーソルを合わせると名前の左に出る「×」で未配席に戻します。空席をクリックすると、未配席の人を選んでその席に配席できます。</p>
+    </div>
+
+    <aside class="panel sidepanel" id="sv-side">
+      <div class="sidehead"><b>未配席</b><span class="sp"></span>
+        <button class="btn link" id="sv-fold2" title="折りたたむ">×</button></div>
+      <div class="row srow">
+        <input id="sv-q" placeholder="氏名・ローマ字で検索">
+      </div>
+      <div class="row srow">
+        <select id="sv-side-f"><option value="">Side：すべて</option><option value="groom">新郎友人</option><option value="bride">新婦友人</option><option value="none">未設定</option></select>
+        <select id="sv-circle"><option value="">友人圏：すべて</option></select>
+        <select id="sv-sort"><option value="circle">並び：友人圏順</option><option value="latin">並び：ローマ字順</option></select>
+      </div>
+      <div id="sv-list"></div>
+      <p class="note" id="sv-selnote" hidden></p>
+    </aside>
+    <button class="foldtab" id="sv-unfold" hidden title="未配席リストを開く">未配席</button>
+  </div>
+</section>
+</main>
+
+
+<!-- ===== BUDGET ===== -->
+<section class="view" id="v-budget">
+  <h2>予算</h2>
+  <p class="sub">見積の各項目を「固定費／人数連動／卓数連動／その他」に分類し、現在の回答状況から総額を試算します。金額はすべて税込・税サ込。
+    <button class="btn link" id="b-initopen">初期見積（2026/3/28 ホテル発行）を見る</button></p>
+
+  <div class="panel">
+    <div class="row" style="margin-bottom:12px"><b>計算の前提</b><span class="sp"></span>
+      <span class="note">「回答から」は有効な回答の出席人数。手入力に切り替えると任意の数で試算できます。</span></div>
+    <div class="drivers">
+      <div class="drv"><div class="k">出席人数（大人）<span class="sw">
+        <button data-src="auto" data-k="adult">回答から</button><button data-src="man" data-k="adult">手入力</button></span></div>
+        <div class="v"><input type="number" id="b-adult" min="0"><span class="u">名</span></div>
+        <div class="src" id="b-adult-src"></div></div>
+      <div class="drv"><div class="k">出席人数（子ども）<span class="sw">
+        <button data-src="auto" data-k="child">回答から</button><button data-src="man" data-k="child">手入力</button></span></div>
+        <div class="v"><input type="number" id="b-child" min="0"><span class="u">名</span></div>
+        <div class="src" id="b-child-src"></div></div>
+      <div class="drv"><div class="k">卓数<span class="sw">
+        <button data-src="auto" data-k="tables">自動</button><button data-src="man" data-k="tables">手入力</button></span></div>
+        <div class="v"><input type="number" id="b-tables" min="0"><span class="u">卓</span></div>
+        <div class="src">1卓 <input type="number" id="b-seats" min="1" class="seats"> 名で切り上げ（大人＋子ども）</div></div>
+      <div class="drv"><div class="k">世帯数<span class="sw">
+        <button data-src="auto" data-k="hh">回答から</button><button data-src="man" data-k="hh">手入力</button></span></div>
+        <div class="v"><input type="number" id="b-hh" min="0"><span class="u">世帯</span></div>
+        <div class="src">出席の有効回答数。引き出物・引き菓子の目安</div></div>
+    </div>
+  </div>
+
+  <div class="cards">
+    <div class="card enji"><div class="k">総支出見込み</div><div class="v" id="g-total">¥0</div><div class="d note" id="g-total-n"></div></div>
+    <div class="card"><div class="k">ホテル支払い分</div><div class="v" id="g-hotel">¥0</div><div class="d note" id="g-hotel-n"></div></div>
+    <div class="card"><div class="k">個別手配分</div><div class="v" id="g-ext">¥0</div><div class="d note" id="g-ext-n"></div></div>
+    <div class="card"><div class="k">お車代</div><div class="v" id="g-fee">¥0</div><div class="d note">ゲスト一覧の「お車代」の合計</div></div>
+    <div class="card"><div class="k">ご祝儀見込み</div><div class="v" id="g-gift">¥0</div>
+      <div class="d note">大人 <span id="g-gift-n">0</span> 名 × <input type="number" id="b-per" min="0" step="1000" class="per"> 円</div></div>
+    <div class="card" id="g-bal-card"><div class="k">収支見込み</div><div class="v" id="g-bal">¥0</div>
+      <div class="d note" id="g-bal-n"></div></div>
+  </div>
+
+  <div class="grid2">
+    <div class="panel">
+      <div class="row" style="margin-bottom:4px"><b>内訳</b><span class="sp"></span>
+        <span class="note" id="b-hotel-total"></span></div>
+      <div class="stack" id="b-stack"></div>
+      <div class="legend h" id="b-legend"></div>
+      <p class="note" style="margin:8px 0 0" id="b-sub"></p>
+      <table class="cmp" style="margin-top:14px"><thead><tr><th>シナリオ</th><th class="num">大人</th><th class="num">子ども</th><th class="num">卓</th><th class="num">総額</th><th class="num">差額</th></tr></thead><tbody id="b-cmp"></tbody></table>
+      <p class="note" style="margin:8px 0 0">「見積（元）」は最新見積CSVの前提（90名・12卓）。「現在」は上の前提で再計算。</p>
+    </div>
+    <div class="panel">
+      <details id="b-deltabox">
+        <summary style="cursor:pointer"><b>初期見積からの変動</b> <span class="note">（クリックで展開）初期見積 2026/3/28 と現在の試算を項目ごとに比較</span></summary>
+        <div class="tblwrap"><table style="margin-top:10px"><thead><tr><th>項目</th><th class="num">初期見積</th><th class="num">現在</th><th class="num">差</th></tr></thead><tbody id="b-delta"></tbody></table></div>
+        <p class="note" style="margin:8px 0 0">初期見積は税抜のため、税サ込に換算して比較（消費税10%、サービス料対象は×1.15、軽減税率8%）。換算は参考値です。項目名が一致しないものは「追加」「削除」として表示。</p>
+      </details>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="row">
+      <b>ホテル見積項目</b>
+      <select id="b-fcat"><option value="">カテゴリ：すべて</option></select>
+      <select id="b-ftype"><option value="">区分：すべて</option><option value="fix">固定費</option><option value="pp">人数連動</option><option value="pt">卓数連動</option><option value="man">その他</option><option value="kid">お子様メニュー</option></select>
+      <select id="b-fpay"><option value="">支払い：すべて</option><option value="0">未払</option><option value="1">支払済</option></select>
+      <label><input type="checkbox" id="b-hidezero"> プラン内（0円）を隠す</label>
+      <span class="sp"></span>
+      <button class="btn o s" id="b-csv">CSVダウンロード</button>
+      <button class="btn s" id="b-additem">＋ 項目を追加</button>
+    </div>
+    <div id="b-kidwarn" class="warn" style="display:none;margin-bottom:8px"></div>
+    <div class="bulk" id="b-bulk"><b><span id="b-bn">0</span> 件選択</b>
+      <button class="btn s" id="b-setpaid">支払済にする</button>
+      <button class="btn s o" id="b-setunpaid">未払に戻す</button>
+      <span class="sp"></span><button class="btn link" id="b-bclear">選択解除</button></div>
+    <div class="tblwrap"><table id="b-items" class="btbl"><thead><tr>
+      <th><input type="checkbox" id="b-chkall"></th><th>カテゴリ<br><span class="note">小計</span></th>
+      <th>項目</th><th>区分</th><th class="num">税込単価</th><th class="num">数量</th><th class="num">金額</th>
+      <th>支払い</th><th>備考</th><th></th></tr></thead><tbody></tbody></table></div>
+    <p class="note" style="margin:10px 0 0">数量：人数連動＝大人の出席人数（子どもは含めない）／卓数連動＝卓数／その他＝入力値。ゲストテーブルフラワーは High＋Low が卓数を超えないよう連動。カラークロス追加分＝卓数＋5（メイン4・ケーキ1）−プラン内枚数（10名につき1枚）。</p>
+  </div>
+
+  <div class="panel">
+    <div class="row"><b>個別手配分</b><span class="note">ホテル以外への支払い。支払い状況と保管状況を管理</span>
+      <span class="sp"></span><button class="btn s" id="b-addext">＋ 追加</button></div>
+    <div class="tblwrap"><table class="btbl"><thead><tr><th>カテゴリ</th><th>品目</th><th>支払い先</th><th class="num">単価</th><th class="num">数量</th><th class="num">金額</th><th>支払い状況</th><th>保管状況</th><th>備考</th><th></th></tr></thead><tbody id="b-ext"></tbody></table></div>
+  </div>
+
+  <div class="panel">
+    <div class="row"><b>ゲスト別費用（お車代・個別ギフト）</b><span class="note">ゲスト一覧で入力した内容の集計。編集はゲスト一覧から</span>
+      <span class="sp"></span><button class="btn o s" id="b-toguests">ゲスト一覧へ</button></div>
+    <div class="tblwrap"><table class="btbl"><thead><tr><th>氏名</th><th>Side</th><th class="num">お車代</th><th>お車代備考</th><th>個別ギフト</th><th></th></tr></thead><tbody id="b-gc"></tbody></table></div>
+  </div>
+</section>
+
+<!-- ===== MODALS ===== -->
+<div class="modal" id="m-photo"><div class="mbox pbox" id="m-photo-box"></div></div>
+<div class="modal" id="m-guest"><div class="mbox" id="m-guest-box"></div></div>
+<div class="modal" id="m-edit"><div class="mbox" id="m-edit-box"></div></div>
+<div class="modal" id="m-del"><div class="mbox" id="m-del-box"></div></div>
+<div class="modal" id="m-match"><div class="mbox" id="m-match-box"></div></div>
+<div class="modal" id="m-share"><div class="mbox" id="m-share-box"></div></div>
+<div class="modal" id="m-csv"><div class="mbox" id="m-csv-box" style="width:760px"></div></div>
+<div class="modal" id="m-tag"><div class="mbox" id="m-tag-box"></div></div>
+<div class="modal" id="m-init"><div class="mbox wide" id="m-init-box"></div></div>
+<div class="modal" id="m-ext"><div class="mbox" id="m-ext-box"></div></div>
+<div class="modal" id="m-item"><div class="mbox" id="m-item-box"></div></div>
+<div class="modal" id="m-table"><div class="mbox" id="m-table-box"></div></div>
+<div class="modal" id="m-seatask"><div class="mbox" id="m-seatask-box"></div></div>
+
+<!-- B4: 空席をクリックしたときの配席ポップオーバー -->
+<div class="seatpop off" id="sv-pop"></div>
+
+<div class="toast" id="toast"></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>
