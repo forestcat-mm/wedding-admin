@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node tests/worker.test.mjs && node tests/checkin-logic.test.mjs",
+    "test": "node tests/worker.test.mjs && node tests/checkin-logic.test.mjs && node tests/gift-check-logic.test.mjs",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy"
   }

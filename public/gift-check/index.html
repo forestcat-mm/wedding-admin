@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<title>引出物・引菓子 確認リスト</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23F4F0EA'/%3E%3Ctext x='16' y='22' font-size='16' font-family='Georgia,serif' text-anchor='middle' fill='%232B2B2B'%3EM%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="gift-check.css">
+</head>
+<body>
+<!-- 臨時ページ（上部のタブには出さない）。データは DB（gift_check_items）から読む。仕様：00_spec/07_gift-check.md -->
+
+<div id="login"><div class="lbox" id="lg-box" hidden>
+  <p class="t">GIFT CHECK</p><h1>管理画面</h1>
+  <p class="msg" id="loginmsg"></p>
+  <input id="lg-id" type="text" placeholder="ID" autocomplete="username" autocapitalize="off" spellcheck="false">
+  <input id="lg-pw" type="password" placeholder="パスワード" autocomplete="current-password">
+  <button id="lg-go">ログイン</button>
+</div>
+<!-- 受付トークンの端末・管理者でないアカウント -->
+<div class="lbox" id="noperm" hidden>
+  <p class="t">GIFT CHECK</p><h1>管理画面</h1>
+  <p class="msg">このページを表示する権限がありません</p>
+  <a class="btn" id="noperm-rcpt" href="/reception/" style="display:block;text-decoration:none" hidden>受付画面へ</a>
+  <button class="btn o" id="noperm-out" style="width:100%" hidden>ログアウト</button>
+</div></div>
+
+<header><div class="hd">
+  <div class="brand">GIFT CHECK<small>M &amp; T — 2026.9.26</small></div>
+  <div class="me"><a href="/" class="gc-back">管理画面へ</a> ｜ <span id="me-mail"></span> ｜ <button class="btn link" id="logout">ログアウト</button></div>
+</div></header>
+
+<main class="gc" id="app" hidden>
+  <div class="gc-title">
+    <h2>引出物・引菓子 確認リスト</h2>
+    <span class="gc-ver">2026-09-25版</span>
+    <span class="sp"></span>
+    <span class="gc-sync" id="sync"></span>
+    <button class="btn o s gc-noprint" id="print">印刷</button>
+  </div>
+
+  <section class="gc-sum" id="sum">
+    <div class="gc-prog">
+      <div class="gc-prog-t"><b>確認済 <em id="s-done">0</em> / <span id="s-all">0</span>行</b><span id="s-diff"></span></div>
+      <div class="gc-bar"><i id="s-bar"></i></div>
+    </div>
+    <div class="gc-cats" id="s-cats"></div>
+  </section>
+
+  <div class="gc-filter gc-noprint">
+    <div class="gc-seg" id="f-mode" role="group" aria-label="絞り込み">
+      <button data-v="all" class="on">すべて</button><button data-v="todo">未確認のみ</button><button data-v="diff">差異あり</button>
+    </div>
+    <div class="gc-seg" id="f-cat" role="group" aria-label="区分">
+      <button data-v="all" class="on">全区分</button><button data-v="引出物">引出物</button><button data-v="引菓子">引菓子</button>
+    </div>
+  </div>
+
+  <div class="gc-list" id="list"></div>
+  <p class="gc-empty" id="empty" hidden>該当する行はありません</p>
+</main>
+
+<div class="toast" id="toast"></div>
+<script type="module" src="gift-check.js"></script>
+</body>
+</html>
