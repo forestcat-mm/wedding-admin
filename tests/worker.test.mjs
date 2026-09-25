@@ -37,6 +37,8 @@ const db = {
           { table_id: 'tA', seat_index: 3, person_type: 'reply_person', person_id: 'c1' }, { table_id: 'tB', seat_index: 1, person_type: 'reply_person', person_id: 'c2' }],
   tables: [{ id: 'tA', label: 'A' }, { id: 'tB', label: 'B' }],
   settings: [{ key: 'reception_id_enabled', value: true }],
+  circles: [{ id: 'c1', name: '大学' }, { id: 'c2', name: '会社' }],
+  guestCircles: [{ guest_id: G1, circle_id: 'c1' }, { guest_id: G1, circle_id: 'c2' }, { guest_id: G_ABSENT, circle_id: 'c1' }],
 };
 const log = [];
 globalThis.fetch = async (url, init = {}) => {
@@ -57,7 +59,7 @@ globalThis.fetch = async (url, init = {}) => {
     if (v === 'is.null') return r[k] == null; if (v === 'not.is.null') return r[k] != null;
     if (v.startsWith('eq.')) return String(r[k]) === decodeURIComponent(v.slice(3)); return true;
   }));
-  const src = { reception_tokens: db.tokens, guests: db.guests, reception_items: db.items, seating_assignments: db.seats, seating_tables: db.tables, replies_admin: db.replies, reply_people: db.people, app_settings: db.settings }[table] || [];
+  const src = { reception_tokens: db.tokens, guests: db.guests, reception_items: db.items, seating_assignments: db.seats, seating_tables: db.tables, replies_admin: db.replies, reply_people: db.people, app_settings: db.settings, circles: db.circles, guest_circles: db.guestCircles }[table] || [];
   if (init.method === 'PATCH') { const rows = filt(src); rows.forEach(r => Object.assign(r, JSON.parse(init.body))); return new Response(JSON.stringify(rows.map(pick))); }
   return new Response(JSON.stringify(filt(src).map(pick)));
 };
@@ -90,6 +92,7 @@ r = await req('/api/reception/me', { headers: { cookie: cookie.slice(0, -2) + 'x
 r = await req('/api/reception/guests', { headers: { cookie } }); b = await r.json();
 const txt = JSON.stringify(b);
 ok('guests list', b.guests.length === 1 && b.guests[0].reception_id === '12345' && b.guests[0].items.length === 1);
+ok('v2.4: guest has circles [{id,name}]', JSON.stringify(b.guests[0].circles) === JSON.stringify([{ id: 'c1', name: '大学' }, { id: 'c2', name: '会社' }]));
 ok('v2: guest has side and table/seat', b.guests[0].side === 'groom' && b.guests[0].table === 'A' && b.guests[0].seat === 3);
 ok('v2: absent / unseated / deleted / unanswered / provisional guests are excluded',
    !txt.includes('20002') && !txt.includes('20003') && !txt.includes('20004') && !txt.includes('20005') && !txt.includes('20006'));

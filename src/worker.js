@@ -254,7 +254,7 @@ async function readJson(request) {
      配席済み＝その回答の本人（reply_people idx=0）または未回答の仮配席（person_type='guest'）に seating_assignments がある
      side   ＝guests.side、無ければ回答の side */
 async function guestList(env) {
-  const [guests, items, seats, tables, replies, people] = await Promise.all([
+  const [guests, items, seats, tables, replies, people, circles, guestCircles] = await Promise.all([
     sbGet(env, 'guests?deleted_at=is.null&select=id,reception_id,family_name,given_name,family_name_latin,given_name_latin,side,checked_in_at,checked_in_by&order=family_name_latin.nullslast,family_name'),
     sbGet(env, 'reception_items?select=id,guest_id,label,note,handed_at,handed_by,sort&order=sort,created_at'),
     sbGet(env, 'seating_assignments?select=table_id,seat_index,person_type,person_id'),
@@ -262,7 +262,17 @@ async function guestList(env) {
     sbGet(env, 'replies_admin?deleted_at=is.null&superseded_by=is.null&matched_guest_id=not.is.null&attending=eq.true&select=id,matched_guest_id,side'),
     /* v2.1: 本人（idx=0）と同行者（idx>0）をまとめて取る。氏名は管理画面で修正済みの値。連絡先の列は無い */
     sbGet(env, 'reply_people?deleted_at=is.null&select=id,reply_id,idx,attending,family_name,given_name,family_name_latin,given_name_latin,is_child,age,birthdate&order=idx'),
+    /* v2.4: 友人圏タグ */
+    sbGet(env, 'circles?select=id,name&order=name'),
+    sbGet(env, 'guest_circles?select=guest_id,circle_id'),
   ]);
+  const circleById = new Map(circles.map(c => [c.id, c]));
+  const circlesOfGuest = new Map();
+  for (const gc of guestCircles) {
+    const c = circleById.get(gc.circle_id); if (!c) continue;
+    if (!circlesOfGuest.has(gc.guest_id)) circlesOfGuest.set(gc.guest_id, []);
+    circlesOfGuest.get(gc.guest_id).push({ id: c.id, name: c.name });
+  }
   const tableById = new Map(tables.map(t => [t.id, t.label]));
   const seatByPerson = new Map(seats.map(a => [`${a.person_type}:${a.person_id}`, a]));
   const replyOfGuest = new Map(replies.map(r => [r.matched_guest_id, r]));
@@ -303,6 +313,7 @@ async function guestList(env) {
       checked_in_at: g.checked_in_at, checked_in_by: g.checked_in_by,
       items: itemsOf.get(g.id) || [],
       companions: companionsOfReply.get(r.id) || [],
+      circles: circlesOfGuest.get(g.id) || [],
     });
   }
   return out;

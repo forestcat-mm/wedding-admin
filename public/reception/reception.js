@@ -4,7 +4,7 @@
    仕様：00_spec/reception.md（v1）、00_spec/03_reception-v2.md（v2：対象の限定・サイド切替・PC レイアウト）、
          00_spec/04_reception-v2.1.md（v2.1：同行者の表示） */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { planCheckin, enterAllowed } from './checkin-logic.js';
+import { planCheckin, enterAllowed, isWarn, unhandedAfterCheckin, doneOrder } from './checkin-logic.js';
 const SUPA_URL = 'https://cvnqnvnppvfhwmrehagt.supabase.co';
 const SUPA_KEY = 'sb_publishable_ZYwTP155dx57wEopKpezNA_LR1IOjID';
 const sb = createClient(SUPA_URL, SUPA_KEY);
@@ -18,7 +18,7 @@ const SIDES = ['groom', 'bride', 'all'];
 const SIDE_LABEL = { groom: '新郎側', bride: '新婦側' };
 const SIDE_KEY = 'rcpt_side';
 
-const R = { guests: [], q: '', filter: 'all', side: 'all', me: null, queue: [], pendingIds: new Set(), timer: null, retry: null, hit: null, ridOn: true };
+const R = { guests: [], q: '', filter: 'all', side: 'all', circle: '', me: null, queue: [], pendingIds: new Set(), timer: null, retry: null, hit: null, ridOn: true };
 
 /* ---------------- API ---------------- */
 async function authHeaders() {
@@ -99,23 +99,41 @@ function matchesQuery(g) {
 }
 function matchesFilter(g) {
   if (R.filter === 'todo' && g.checked_in_at) return false;
+  if (R.filter === 'done' && !g.checked_in_at) return false;
   if (R.filter === 'items' && !g.items.length) return false;
+  if (R.circle && !(g.circles || []).some(c => c.id === R.circle)) return false;   /* v2.4: 友人圏タグ */
   return true;
 }
 const order = (a, b) => (a.checked_in_at ? 1 : 0) - (b.checked_in_at ? 1 : 0)
   || (R.ridOn ? (a.reception_id || '99999').localeCompare(b.reception_id || '99999') : 0)
   || latin(a).localeCompare(latin(b), 'en');
 
+/* v2.4: 友人圏タグのチップ。選択中のサイドに該当者がいるタグだけ出す */
+function renderCircleChips(pool) {
+  const box = $('#circles');
+  const seen = new Map();
+  for (const g of pool) for (const c of g.circles || []) if (!seen.has(c.id)) seen.set(c.id, c.name);
+  if (R.circle && !seen.has(R.circle)) R.circle = '';
+  const list = [...seen].sort((a, b) => a[1].localeCompare(b[1], 'ja'));
+  box.hidden = !list.length;
+  box.innerHTML = list.length ? `<button data-c="" class="${R.circle ? '' : 'on'}">すべて</button>`
+    + list.map(([id, name]) => `<button data-c="${esc(id)}" class="${R.circle === id ? 'on' : ''}">${esc(name)}</button>`).join('') : '';
+}
 function render() {
   /* v2: 母数は選択中のサイド */
   const pool = R.guests.filter(inSide);
   const done = pool.filter(g => g.checked_in_at).length;
   $('#c-done').textContent = done; $('#c-all').textContent = pool.length;
-  const main = pool.filter(g => matchesQuery(g) && matchesFilter(g)).sort(order);
+  renderCircleChips(pool);
+  /* v2.4: 受付済・お渡し未済の件数を受付済タブに付ける */
+  const warnN = pool.filter(isWarn).length;
+  $('#f-done').innerHTML = warnN ? `受付済 <span class="warnn">⚠${warnN}</span>` : '受付済';
+  const sorter = R.filter === 'done' ? doneOrder : order;
+  const main = pool.filter(g => matchesQuery(g) && matchesFilter(g)).sort(sorter);
   /* v2: 検索中は、もう一方のサイドの該当者も下に薄く出す（別サイドのゲストが来ても受付できるように） */
   const q = R.q.trim();
   const other = q && R.side !== 'all'
-    ? R.guests.filter(g => !inSide(g) && matchesQuery(g) && matchesFilter(g)).sort(order) : [];
+    ? R.guests.filter(g => !inSide(g) && matchesQuery(g) && matchesFilter(g)).sort(sorter) : [];
   /* 5桁で1件だけ一致したらその行を強調する（Enter で受付） */
   R.hit = ridQuery(q) && main.length + other.length === 1 ? (main[0] || other[0]) : null;
 
@@ -161,7 +179,10 @@ const itemsHTML = g => g.items.map(it => `
 const checkHTML = g => `<button class="ckbtn" data-checkin="${esc(g.id)}" data-undo="${g.checked_in_at ? '1' : ''}">${g.checked_in_at ? '受付済' : '受付'}</button>
       ${g.checked_in_at ? `<small>${fmtT(g.checked_in_at)}</small><small class="by">${esc(g.checked_in_by || '')}</small>` : ''}`;
 const cls = g => [g.checked_in_at ? 'done' : '', R.pendingIds.has(g.id) ? 'pending' : '', inSide(g) ? '' : 'other',
-  g.items.some(i => !i.handed_at) ? 'unhanded' : '', R.hit?.id === g.id ? 'hit' : ''].filter(Boolean).join(' ');
+  g.items.some(i => !i.handed_at) ? 'unhanded' : '', isWarn(g) ? 'warn' : '', R.hit?.id === g.id ? 'hit' : ''].filter(Boolean).join(' ');
+/* v2.4: 受付済・お渡し未済の注意（⚠ 未渡し：お車代） */
+const warnHTML = g => isWarn(g) ? `<div class="warnline">⚠ 未渡し：${esc(unhandedAfterCheckin(g).map(i => i.label).join('・'))}</div>` : '';
+const circlesHTML = g => (g.circles || []).length ? `<span class="ctags">${g.circles.map(c => `<span class="ctag">${esc(c.name)}</span>`).join('')}</span>` : '';
 
 /* スマホ・タブレット：カード */
 function card(g) {
@@ -170,7 +191,9 @@ function card(g) {
     <div class="info">
       ${R.ridOn ? `<div class="rid${g.reception_id ? '' : ' none'}">${g.reception_id ? esc(g.reception_id) : '受付ID未発番'}</div>` : ''}
       <div class="nm">${esc(fullName(g)) || '（名前なし）'} ${sideBadge(g)}${countBadge(g)}<small>${esc(latin(g))}</small></div>
+      ${circlesHTML(g)}
       ${compsHTML(g)}
+      ${warnHTML(g)}
       <div class="tb">${g.table ? `卓 <b>${esc(g.table)}</b>${g.seat ? `　席 ${g.seat}` : ''}` : '卓：未定'}</div>
     </div>
     <div class="chk">${checkHTML(g)}</div>
@@ -190,7 +213,7 @@ function rowHTML(g) {
   const items = itemsHTML(g);
   return `<tr class="${cls(g)}" data-id="${esc(g.id)}">
     ${R.ridOn ? `<td class="c-rid"><span class="rid${g.reception_id ? '' : ' none'}">${g.reception_id ? esc(g.reception_id) : '未発番'}</span></td>` : ''}
-    <td class="c-nm"><b>${esc(fullName(g)) || '（名前なし）'}</b>${countBadge(g)}<small>${esc(latin(g))}</small>${compsHTML(g)}</td>
+    <td class="c-nm"><b>${esc(fullName(g)) || '（名前なし）'}</b>${countBadge(g)}<small>${esc(latin(g))}</small>${circlesHTML(g)}${compsHTML(g)}${warnHTML(g)}</td>
     <td class="c-side">${sideBadge(g)}</td>
     <td class="c-tb">${g.table ? `<b>${esc(g.table)}</b>${g.seat ? ` <small>席 ${g.seat}</small>` : ''}` : '<small>未定</small>'}</td>
     <td class="c-items">${items ? `<div class="items">${items}</div>` : '<small class="none">—</small>'}</td>
@@ -274,18 +297,20 @@ function openCheckinPop(g) {
         <input type="checkbox" value="${esc(it.id)}"${it.handed_at ? ' checked' : ''}>
         <span class="lb"><b>${esc(it.label)}</b>${it.note ? `<small>メモ：${esc(it.note)}</small>` : ''}${it.handed_at ? `<small class="at">お渡し済 ${fmtT(it.handed_at)}${it.handed_by ? '・' + esc(it.handed_by) : ''}</small>` : ''}</span>
       </label>`).join('')}
-      <p class="ck-err" id="ck-err" hidden></p>
+      <div class="ck-err" id="ck-err" hidden><span id="ck-err-msg"></span>
+        <button type="button" class="btn force" id="ck-force">お渡しせずに受付する</button></div>
     </div>` : ''}
     <div class="mrow"><button class="btn o" id="ck-cancel">キャンセル</button><button class="btn" id="ck-go">受付</button></div>`;
   $('#ckpop').hidden = false;
   $('#ck-cancel').onclick = closeCheckinPop;
-  $('#ck-go').onclick = submitCheckinPop;
+  $('#ck-go').onclick = () => submitCheckinPop(false);
+  const fb = $('#ck-force'); if (fb) fb.onclick = () => submitCheckinPop(true);   /* クリックでのみ（Enter では押せない） */
   box.addEventListener('change', e => { if (e.target.matches('input[type=checkbox]')) clearCheckinError(); });
   /* PC：Enter で受付、Esc でキャンセル。開いてから 0.5 秒は Enter を受け付けない */
   POP.onKey = e => {
     if ($('#ckpop').hidden) return;
     if (e.key === 'Escape') { e.preventDefault(); closeCheckinPop(); }
-    else if (e.key === 'Enter') { e.preventDefault(); if (enterAllowed(POP.openedAt)) submitCheckinPop(); }
+    else if (e.key === 'Enter') { e.preventDefault(); if (enterAllowed(POP.openedAt)) submitCheckinPop(false); }   /* Enter は「受付」だけ */
   };
   document.addEventListener('keydown', POP.onKey);
   $('#ck-go').focus();
@@ -300,13 +325,13 @@ function clearCheckinError() {
   const err = $('#ck-err'); if (err) err.hidden = true;
   $$('#ck-items .ck-item.miss').forEach(el => el.classList.remove('miss'));
 }
-function submitCheckinPop() {
+function submitCheckinPop(force) {
   const g = POP.g; if (!g) return;
   const checked = new Set($$('#ck-items input[type=checkbox]:checked').map(i => i.value));
-  const plan = planCheckin(g, checked);
+  const plan = planCheckin(g, checked, { force: !!force });
   if (!plan.ok) {
-    const err = $('#ck-err');
-    err.textContent = `お渡しが済んでいません：${plan.missing.join('・')}`; err.hidden = false;
+    /* v2.4: 受付せず、赤い帯でリマインドし「お渡しせずに受付する」を出す */
+    $('#ck-err-msg').textContent = `お渡しが済んでいません：${plan.missing.join('・')}`; $('#ck-err').hidden = false;
     $$('#ck-items .ck-item').forEach(el => el.classList.toggle('miss', plan.missingIds.includes(el.dataset.item)));
     return;
   }
@@ -343,6 +368,11 @@ $('#q').addEventListener('input', e => { R.q = e.target.value; render(); });
 $('#q').addEventListener('keydown', e => {
   if (e.key === 'Escape') { e.preventDefault(); $('#q').value = ''; R.q = ''; render(); }
   else if (e.key === 'Enter' && R.hit) { e.preventDefault(); checkIn(R.hit); }
+});
+$('#circles').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  R.circle = b.dataset.c || '';
+  render();
 });
 $('#filters').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
