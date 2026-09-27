@@ -643,3 +643,20 @@ details.help[open] summary{margin-bottom:2px}
   #m-gift .gtbtns{position:sticky;bottom:-16px;background:#fff;padding:10px 0;border-top:1px solid var(--line)}
   .gtmeta{grid-template-columns:90px 1fr}
 }
+/* ご祝儀 v2（00_spec/10_gifts-v2.md） */
+.gtset .row>span{font-size:12px}
+#gt-def{border:1px solid var(--line);padding:5px 8px;text-align:right}
+.gtl td.ck{width:28px}
+.gtl tr.sel td{background:#FFF8E6}
+.gtl .dot{color:var(--ink2);font-weight:400}
+.tag.nbadge{background:var(--ink);border-color:var(--ink);color:#fff;border-radius:9px;margin-left:4px}
+.tag.karitag{background:#F2F0EC;color:#9a9188;font-size:10px;padding:0 5px}
+.stalewarn{display:block;color:var(--enji);font-size:11px}
+input.gtamt{width:92px;border:1px solid var(--line);padding:3px 6px;text-align:right;font-family:var(--sans);font-variant-numeric:tabular-nums;font-size:13px;background:#fff}
+input.gtamt.exp{color:#a39a90}
+input.gtamt:focus{color:var(--ink);border-color:var(--ink2)}
+.gtl tr.rec input.gtamt{font-weight:600}
+.btn.rcvbtn{padding:5px 16px;background:var(--ok)}
+.gtl td small.note{display:block;font-size:10.5px}
+.gtdstat{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#FBF9F5;border:1px solid var(--line);padding:8px 10px;margin:6px 0 12px}
+.gpop-body .f input{font-size:16px}

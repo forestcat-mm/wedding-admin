@@ -553,7 +553,9 @@ CREATE TABLE public.reception_tokens (
 );
 
 -- ---------- gifts ----------
--- ご祝儀（00_spec/09_gifts.md）。giver_name はゲスト一覧にいない贈り主（「・」区切り）。amount_jpy が集計・予算連動に使う円換算額（JPY は amount と同じ）。
+-- ご祝儀（00_spec/10_gifts-v2.md。v1 は 09_gifts.md）。出席者は同期で1人1件の仮（source=attendee, status=expected）を作り、「受領」で received にする。
+-- 金額：仮は expected_jpy、受領済みは amount_jpy（円換算額。JPY は amount と同じ）。予算の収入は Σ（受領済みなら amount_jpy、仮なら expected_jpy）。
+-- expected_edited：仮の金額を手で変えた印（既定値 app_settings.gift_default_jpy の変更で更新しない）。giver_name は v1 の列で、v2 では使わない（贈り主は gift_givers）。
 -- updated_at のトリガーは無い（管理画面が更新時に入れる）。受付 API からは読まない
 CREATE TABLE public.gifts (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -564,7 +566,6 @@ CREATE TABLE public.gifts (
     currency text DEFAULT 'JPY'::text NOT NULL,
     amount numeric,
     amount_jpy integer,
-    received_on date DEFAULT '2026-09-26'::date NOT NULL,
     route text DEFAULT 'reception'::text NOT NULL,
     return_needed boolean DEFAULT true NOT NULL,
     thank_you_sent boolean DEFAULT false NOT NULL,
@@ -572,16 +573,32 @@ CREATE TABLE public.gifts (
     deleted_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    source text DEFAULT 'manual'::text NOT NULL,
+    status text DEFAULT 'expected'::text NOT NULL,
+    expected_jpy integer DEFAULT 0 NOT NULL,
+    received_at timestamp with time zone,
+    received_by text,
+    expected_edited boolean DEFAULT false NOT NULL,
     CONSTRAINT gifts_kind_check CHECK ((kind = ANY (ARRAY['cash'::text, 'goods'::text, 'transfer'::text, 'e_money'::text, 'other'::text]))),
+    CONSTRAINT gifts_kind_chk CHECK ((kind = ANY (ARRAY['cash'::text, 'goods'::text, 'transfer'::text, 'e_money'::text, 'other'::text]))),
     CONSTRAINT gifts_route_check CHECK ((route = ANY (ARRAY['reception'::text, 'hand'::text, 'mail'::text, 'later'::text, 'other'::text]))),
-    CONSTRAINT gifts_side_check CHECK ((side = ANY (ARRAY['groom'::text, 'bride'::text])))
+    CONSTRAINT gifts_route_chk CHECK ((route = ANY (ARRAY['reception'::text, 'hand'::text, 'mail'::text, 'later'::text, 'other'::text]))),
+    CONSTRAINT gifts_side_check CHECK ((side = ANY (ARRAY['groom'::text, 'bride'::text]))),
+    CONSTRAINT gifts_side_chk CHECK (((side IS NULL) OR (side = ANY (ARRAY['groom'::text, 'bride'::text])))),
+    CONSTRAINT gifts_source_chk CHECK ((source = ANY (ARRAY['attendee'::text, 'manual'::text]))),
+    CONSTRAINT gifts_status_chk CHECK ((status = ANY (ARRAY['expected'::text, 'received'::text])))
 );
 
 -- ---------- gift_givers ----------
--- ご祝儀とゲストの紐付け（連名は複数行）
+-- 1行＝贈り主1人。出席者は reply_person_id（一意：1人の出席者が入るご祝儀は1つだけ）、欠席・未回答の招待客は guest_id、それ以外は name
 CREATE TABLE public.gift_givers (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
     gift_id uuid NOT NULL,
-    guest_id uuid NOT NULL
+    reply_person_id uuid,
+    guest_id uuid,
+    name text,
+    sort integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 -- ---------- gift_returns ----------
@@ -717,7 +734,7 @@ ALTER TABLE ONLY public.reception_tokens
 ALTER TABLE ONLY public.gifts
     ADD CONSTRAINT gifts_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY public.gift_givers
-    ADD CONSTRAINT gift_givers_pkey PRIMARY KEY (gift_id, guest_id);
+    ADD CONSTRAINT gift_givers_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY public.gift_returns
     ADD CONSTRAINT gift_returns_pkey PRIMARY KEY (id);
 
@@ -740,7 +757,9 @@ ALTER TABLE ONLY public.reception_items
 ALTER TABLE ONLY public.gift_givers
     ADD CONSTRAINT gift_givers_gift_id_fkey FOREIGN KEY (gift_id) REFERENCES public.gifts(id) ON DELETE CASCADE;
 ALTER TABLE ONLY public.gift_givers
-    ADD CONSTRAINT gift_givers_guest_id_fkey FOREIGN KEY (guest_id) REFERENCES public.guests(id) ON DELETE CASCADE;
+    ADD CONSTRAINT gift_givers_guest_id_fkey FOREIGN KEY (guest_id) REFERENCES public.guests(id) ON DELETE SET NULL;
+ALTER TABLE ONLY public.gift_givers
+    ADD CONSTRAINT gift_givers_reply_person_id_fkey FOREIGN KEY (reply_person_id) REFERENCES public.reply_people(id) ON DELETE SET NULL;
 ALTER TABLE ONLY public.gift_returns
     ADD CONSTRAINT gift_returns_gift_id_fkey FOREIGN KEY (gift_id) REFERENCES public.gifts(id) ON DELETE CASCADE;
 
@@ -752,7 +771,8 @@ ALTER TABLE ONLY public.gift_returns
 CREATE UNIQUE INDEX seating_grid_unique ON public.seating_tables USING btree (grid_row, grid_col) WHERE (grid_row IS NOT NULL);
 CREATE UNIQUE INDEX seating_seat_unique ON public.seating_assignments USING btree (table_id, seat_index) WHERE (seat_index IS NOT NULL);
 CREATE INDEX reception_items_guest_idx ON public.reception_items USING btree (guest_id);
-CREATE INDEX gift_givers_guest_idx ON public.gift_givers USING btree (guest_id);
+CREATE INDEX gift_givers_gift_idx ON public.gift_givers USING btree (gift_id);
+CREATE UNIQUE INDEX gift_givers_person_uniq ON public.gift_givers USING btree (reply_person_id) WHERE (reply_person_id IS NOT NULL);
 CREATE INDEX gift_returns_gift_idx ON public.gift_returns USING btree (gift_id);
 
 

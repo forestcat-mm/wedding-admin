@@ -271,26 +271,37 @@
   </div>
 </section>
 
-<!-- ===== GIFTS（ご祝儀・内祝い）仕様：00_spec/09_gifts.md ===== -->
+<!-- ===== GIFTS（ご祝儀・内祝い）仕様：00_spec/10_gifts-v2.md（v1：09_gifts.md） ===== -->
 <section class="view" id="v-gifts">
   <h2>ご祝儀</h2>
-  <p class="sub">いただいたご祝儀と、内祝い（お返し）の手配の記録。ご祝儀の合計と内祝いの購入額は予算タブの収入・支出に自動で連動します。金額はログインした管理者だけが見られます。</p>
+  <p class="sub">出席者は仮の金額で自動的に並びます。いただいたら「受領」を押すと実績になります（金額が違うときは、先に金額欄を直してください）。合計と内祝いの購入額は予算タブに自動で連動します。金額はログインした管理者だけが見られます。</p>
+  <div class="panel gtset"><div class="row" style="margin:0">
+    <b>仮の金額（本人）</b>
+    <input id="gt-def" type="number" min="0" step="1000" inputmode="numeric" style="width:110px"><span>円</span>
+    <button class="btn s o" id="gt-def-save">変更</button>
+    <span class="note">同行者は 0 円。変更すると「仮・出席者・本人・金額を手で変えていない」行だけを新しい金額にします</span>
+    <span class="sp"></span><span class="note" id="gt-syncnote"></span>
+    <button class="btn s o" id="gt-sync">出席者を同期</button></div></div>
   <div class="cards" id="gt-cards"></div>
   <div class="panel">
     <div class="row">
-      <input id="gt-q" placeholder="贈り主・表書きで検索" style="width:180px">
+      <input id="gt-q" placeholder="贈り主・表書きで検索" style="width:170px">
+      <select id="gt-status"><option value="">状態：すべて</option><option value="expected">仮のみ</option><option value="received">受領済み</option></select>
       <select id="gt-side"><option value="">サイド：すべて</option><option value="groom">新郎側</option><option value="bride">新婦側</option><option value="none">未設定</option></select>
       <select id="gt-circle"><option value="">友人圏：すべて</option></select>
-      <select id="gt-kind"><option value="">種類：すべて</option></select>
+      <select id="gt-source"><option value="">出席者・追加：すべて</option><option value="attendee">出席者</option><option value="manual">追加</option></select>
       <select id="gt-state"><option value="">内祝い：すべて</option></select>
-      <select id="gt-thanks"><option value="">お礼状：すべて</option><option value="unsent">未送付</option><option value="sent">送付済</option></select>
-      <select id="gt-sort"><option value="received">並び：受け取り日（新しい順）</option><option value="amount">並び：金額（多い順）</option><option value="name">並び：名前順</option></select>
+      <select id="gt-sort"><option value="name">並び：名前</option><option value="side">並び：サイド</option><option value="amount">並び：金額（多い順）</option><option value="received">並び：受領日時（新しい順）</option></select>
       <span class="sp"></span>
       <button class="btn o s" id="gt-csv">CSVダウンロード</button>
-      <button class="btn s" id="gt-add">＋ ご祝儀を登録</button>
+      <button class="btn s" id="gt-add">＋ ご祝儀を追加</button>
     </div>
+    <div class="bulk" id="gt-bulk"><b><span id="gt-bn">0</span> 件選択</b>
+      <button class="btn s" id="gt-merge">連名にまとめる</button>
+      <span class="note">先頭の行に、ほかの行の贈り主をまとめます（受領済みの行は対象外）</span>
+      <span class="sp"></span><button class="btn link" id="gt-bclear">選択解除</button></div>
     <div class="tblwrap"><table class="btbl gtl"><thead><tr>
-      <th>贈り主</th><th>表書きの名義</th><th>サイド</th><th>種類</th><th class="num">金額（円）</th><th>内祝い状況</th><th>お礼状</th><th></th></tr></thead>
+      <th><input type="checkbox" id="gt-chkall"></th><th>贈り主</th><th>表書きの名義</th><th>サイド</th><th class="num">金額（円）</th><th>状態</th><th>内祝い状況</th><th>お礼状</th><th></th></tr></thead>
       <tbody id="gt-body"></tbody></table></div>
     <p class="note" style="margin:10px 0 0" id="gt-count"></p>
   </div>
@@ -332,9 +343,8 @@
     <div class="card"><div class="k">ホテル支払い分</div><div class="v" id="g-hotel">¥0</div><div class="d note" id="g-hotel-n"></div></div>
     <div class="card"><div class="k">個別手配分</div><div class="v" id="g-ext">¥0</div><div class="d note" id="g-ext-n"></div></div>
     <div class="card"><div class="k">お車代</div><div class="v" id="g-fee">¥0</div><div class="d note">ゲスト一覧の「お車代」の合計</div></div>
-    <div class="card"><div class="k" id="g-gift-k">ご祝儀見込み</div><div class="v" id="g-gift">¥0</div>
-      <div class="d note" id="g-gift-act" hidden></div>
-      <div class="d note"><span id="g-gift-est-k">見込み：</span>大人 <span id="g-gift-n">0</span> 名 × <input type="number" id="b-per" min="0" step="1000" class="per"> 円<span id="g-gift-est"></span></div></div>
+    <div class="card b-giftgo" title="ご祝儀タブへ"><div class="k">ご祝儀 <span class="tag auto">自動</span></div><div class="v" id="g-gift">¥0</div>
+      <div class="d note" id="g-gift-n"></div></div>
     <div class="card" id="g-bal-card"><div class="k">収支見込み</div><div class="v" id="g-bal">¥0</div>
       <div class="d note" id="g-bal-n"></div></div>
   </div>
@@ -416,6 +426,7 @@
 <div class="modal" id="m-ev"><div class="mbox" id="m-ev-box"></div></div>
 <div class="modal" id="m-gift"><div class="mbox" id="m-gift-box"></div></div>
 <div class="modal" id="m-giftd"><div class="mbox wide" id="m-giftd-box"></div></div>
+<div class="modal" id="m-gpop"><div class="mbox" id="m-gpop-box" style="width:400px"></div></div>
 <div class="modal" id="m-qr"><div class="mbox" id="m-qr-box" style="width:380px;text-align:center"></div></div>
 
 <!-- B4: 空席をクリックしたときの配席ポップオーバー -->

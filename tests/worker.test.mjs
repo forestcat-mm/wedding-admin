@@ -39,9 +39,10 @@ const db = {
   settings: [{ key: 'reception_id_enabled', value: true }],
   circles: [{ id: 'c1', name: '大学' }, { id: 'c2', name: '会社' }],
   guestCircles: [{ guest_id: G1, circle_id: 'c1' }, { guest_id: G1, circle_id: 'c2' }, { guest_id: G_ABSENT, circle_id: 'c1' }],
-  /* ご祝儀（09_gifts）。受付 API からは一切読まれず、返らないこと */
-  gifts: [{ id: 'gift1', giver_name: null, envelope_name: 'ENVELOPE_SECRET', side: 'groom', kind: 'cash', currency: 'JPY', amount: 987654, amount_jpy: 987654, deleted_at: null }],
-  giftGivers: [{ gift_id: 'gift1', guest_id: G1 }],
+  /* ご祝儀（09_gifts / 10_gifts-v2）。受付 API からは一切読まれず、返らないこと */
+  gifts: [{ id: 'gift1', source: 'attendee', status: 'received', envelope_name: 'ENVELOPE_SECRET', side: 'groom', kind: 'cash', currency: 'JPY', amount: 987654, amount_jpy: 987654, expected_jpy: 30000, received_by: 'RECEIVER_SECRET', deleted_at: null },
+          { id: 'gift2', source: 'attendee', status: 'expected', expected_jpy: 876543, deleted_at: null }],
+  giftGivers: [{ id: 'gv1', gift_id: 'gift1', reply_person_id: 'p1', guest_id: null, name: null }, { id: 'gv2', gift_id: 'gift2', reply_person_id: 'c1', guest_id: null, name: null }],
   giftReturns: [{ id: 'ret1', gift_id: 'gift1', item_name: 'RETURN_SECRET', price_jpy: 43210, shipping_jpy: 0, status: 'ordered', deleted_at: null }],
 };
 const log = [];
@@ -160,8 +161,9 @@ const giftTxt = bodies.join('\n');
 ok('09_gifts: reception API never queries gifts / gift_givers / gift_returns',
    !log.slice(logFrom).some(x => /\/rest\/v1\/gift(s|_givers|_returns)\b/.test(x)));
 ok('09_gifts: reception API responses carry no gift info',
-   !giftTxt.includes('987654') && !giftTxt.includes('ENVELOPE_SECRET') && !giftTxt.includes('RETURN_SECRET') && !giftTxt.includes('43210')
-   && !/"(gift|gifts|amount|amount_jpy|gift_id|envelope_name|return_needed|thank_you_sent)"\s*:/.test(giftTxt));
+   !giftTxt.includes('987654') && !giftTxt.includes('876543') && !giftTxt.includes('ENVELOPE_SECRET') && !giftTxt.includes('RETURN_SECRET')
+   && !giftTxt.includes('RECEIVER_SECRET') && !giftTxt.includes('43210')
+   && !/"(gift|gifts|amount|amount_jpy|expected_jpy|gift_id|envelope_name|return_needed|thank_you_sent|received_by|status)"\s*:/.test(giftTxt));
 for (const path of ['/api/reception/gifts', '/api/gifts']) {
   r = await req(path, { headers: { cookie } });
   ok(`09_gifts: ${path} → 404`, r.status === 404);
