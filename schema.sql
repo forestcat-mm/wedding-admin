@@ -552,6 +552,59 @@ CREATE TABLE public.reception_tokens (
     CONSTRAINT reception_tokens_default_side_check CHECK ((default_side = ANY (ARRAY['groom'::text, 'bride'::text, 'all'::text])))
 );
 
+-- ---------- gifts ----------
+-- ご祝儀（00_spec/09_gifts.md）。giver_name はゲスト一覧にいない贈り主（「・」区切り）。amount_jpy が集計・予算連動に使う円換算額（JPY は amount と同じ）。
+-- updated_at のトリガーは無い（管理画面が更新時に入れる）。受付 API からは読まない
+CREATE TABLE public.gifts (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    giver_name text,
+    envelope_name text,
+    side text,
+    kind text DEFAULT 'cash'::text NOT NULL,
+    currency text DEFAULT 'JPY'::text NOT NULL,
+    amount numeric,
+    amount_jpy integer,
+    received_on date DEFAULT '2026-09-26'::date NOT NULL,
+    route text DEFAULT 'reception'::text NOT NULL,
+    return_needed boolean DEFAULT true NOT NULL,
+    thank_you_sent boolean DEFAULT false NOT NULL,
+    memo text,
+    deleted_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT gifts_kind_check CHECK ((kind = ANY (ARRAY['cash'::text, 'goods'::text, 'transfer'::text, 'e_money'::text, 'other'::text]))),
+    CONSTRAINT gifts_route_check CHECK ((route = ANY (ARRAY['reception'::text, 'hand'::text, 'mail'::text, 'later'::text, 'other'::text]))),
+    CONSTRAINT gifts_side_check CHECK ((side = ANY (ARRAY['groom'::text, 'bride'::text])))
+);
+
+-- ---------- gift_givers ----------
+-- ご祝儀とゲストの紐付け（連名は複数行）
+CREATE TABLE public.gift_givers (
+    gift_id uuid NOT NULL,
+    guest_id uuid NOT NULL
+);
+
+-- ---------- gift_returns ----------
+-- 内祝い（1つのご祝儀に複数可）。予算の支出「内祝い」は price_jpy + shipping_jpy の合計（status='planned' は除く）
+CREATE TABLE public.gift_returns (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    gift_id uuid NOT NULL,
+    item_name text NOT NULL,
+    shop text,
+    price_jpy integer DEFAULT 0 NOT NULL,
+    shipping_jpy integer DEFAULT 0 NOT NULL,
+    status text DEFAULT 'planned'::text NOT NULL,
+    purchased_on date,
+    shipped_on date,
+    order_no text,
+    url text,
+    memo text,
+    deleted_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT gift_returns_status_check CHECK ((status = ANY (ARRAY['planned'::text, 'ordered'::text, 'shipped'::text, 'delivered'::text])))
+);
+
 -- sync_rsvp_row：rsvp 1行を replies_admin / reply_people に展開し、招待者と突き合わせる（トリガーと初回取り込みで共用）（引数に rsvp 型を使うのでテーブルの後に定義）
 CREATE FUNCTION public.sync_rsvp_row(r public.rsvp) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
@@ -661,6 +714,12 @@ ALTER TABLE ONLY public.seating_assignments
     ADD CONSTRAINT seating_assignments_person_type_person_id_key UNIQUE (person_type, person_id);
 ALTER TABLE ONLY public.reception_tokens
     ADD CONSTRAINT reception_tokens_code_key UNIQUE (code);
+ALTER TABLE ONLY public.gifts
+    ADD CONSTRAINT gifts_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.gift_givers
+    ADD CONSTRAINT gift_givers_pkey PRIMARY KEY (gift_id, guest_id);
+ALTER TABLE ONLY public.gift_returns
+    ADD CONSTRAINT gift_returns_pkey PRIMARY KEY (id);
 
 ALTER TABLE ONLY public.guest_circles
     ADD CONSTRAINT guest_circles_circle_id_fkey FOREIGN KEY (circle_id) REFERENCES public.circles(id) ON DELETE CASCADE;
@@ -678,6 +737,12 @@ ALTER TABLE ONLY public.seating_assignments
     ADD CONSTRAINT seating_assignments_table_id_fkey FOREIGN KEY (table_id) REFERENCES public.seating_tables(id) ON DELETE CASCADE;
 ALTER TABLE ONLY public.reception_items
     ADD CONSTRAINT reception_items_guest_id_fkey FOREIGN KEY (guest_id) REFERENCES public.guests(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.gift_givers
+    ADD CONSTRAINT gift_givers_gift_id_fkey FOREIGN KEY (gift_id) REFERENCES public.gifts(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.gift_givers
+    ADD CONSTRAINT gift_givers_guest_id_fkey FOREIGN KEY (guest_id) REFERENCES public.guests(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.gift_returns
+    ADD CONSTRAINT gift_returns_gift_id_fkey FOREIGN KEY (gift_id) REFERENCES public.gifts(id) ON DELETE CASCADE;
 
 
 -- ============================================================
@@ -687,6 +752,8 @@ ALTER TABLE ONLY public.reception_items
 CREATE UNIQUE INDEX seating_grid_unique ON public.seating_tables USING btree (grid_row, grid_col) WHERE (grid_row IS NOT NULL);
 CREATE UNIQUE INDEX seating_seat_unique ON public.seating_assignments USING btree (table_id, seat_index) WHERE (seat_index IS NOT NULL);
 CREATE INDEX reception_items_guest_idx ON public.reception_items USING btree (guest_id);
+CREATE INDEX gift_givers_guest_idx ON public.gift_givers USING btree (guest_id);
+CREATE INDEX gift_returns_gift_idx ON public.gift_returns USING btree (gift_id);
 
 
 -- ============================================================
@@ -729,6 +796,9 @@ ALTER TABLE public.seating_assignments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.app_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.reception_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.reception_tokens ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.gifts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.gift_givers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.gift_returns ENABLE ROW LEVEL SECURITY;
 
 
 -- ============================================================
@@ -754,6 +824,9 @@ CREATE POLICY "admin all" ON public.seating_assignments TO authenticated USING (
 CREATE POLICY "admin all" ON public.app_settings TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "admin all" ON public.reception_items TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "admin all" ON public.reception_tokens TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "admin all" ON public.gifts TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "admin all" ON public.gift_givers TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "admin all" ON public.gift_returns TO authenticated USING (true) WITH CHECK (true);
 
 
 -- ============================================================
@@ -833,6 +906,15 @@ GRANT ALL ON TABLE public.reception_items TO service_role;
 GRANT ALL ON TABLE public.reception_tokens TO anon;
 GRANT ALL ON TABLE public.reception_tokens TO authenticated;
 GRANT ALL ON TABLE public.reception_tokens TO service_role;
+GRANT ALL ON TABLE public.gifts TO anon;
+GRANT ALL ON TABLE public.gifts TO authenticated;
+GRANT ALL ON TABLE public.gifts TO service_role;
+GRANT ALL ON TABLE public.gift_givers TO anon;
+GRANT ALL ON TABLE public.gift_givers TO authenticated;
+GRANT ALL ON TABLE public.gift_givers TO service_role;
+GRANT ALL ON TABLE public.gift_returns TO anon;
+GRANT ALL ON TABLE public.gift_returns TO authenticated;
+GRANT ALL ON TABLE public.gift_returns TO service_role;
 GRANT ALL ON TABLE public.replies_admin TO anon;
 GRANT ALL ON TABLE public.replies_admin TO authenticated;
 GRANT ALL ON TABLE public.replies_admin TO service_role;

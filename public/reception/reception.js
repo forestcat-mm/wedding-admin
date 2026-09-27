@@ -1,7 +1,7 @@
 /* 受付画面（/reception/）
    データはすべて /api/reception/* から取る（この HTML にはゲスト情報を含めない）。
    認証：Supabase のセッションがあれば Bearer、なければ受付トークンの Cookie。
-   仕様：00_spec/reception.md（v1）、00_spec/03_reception-v2.md（v2：対象の限定・サイド切替・PC レイアウト）、
+   仕様：00_spec/08_reception.md（v1）、00_spec/03_reception-v2.md（v2：対象の限定・サイド切替・PC レイアウト）、
          00_spec/04_reception-v2.1.md（v2.1：同行者の表示） */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { planCheckin, enterAllowed, isWarn, unhandedAfterCheckin, doneOrder } from './checkin-logic.js';

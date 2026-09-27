@@ -32,6 +32,7 @@
     <button data-v="guests">ゲスト一覧</button>
     <button data-v="photos">投稿写真</button>
     <button data-v="budget">予算</button>
+    <button data-v="gifts">ご祝儀</button>
     <button data-v="seating">配席</button>
     <button data-v="circles">友人圏・シェア</button>
     <button data-v="reception">受付トークン</button>
@@ -269,6 +270,31 @@
     <button class="foldtab" id="sv-unfold" hidden title="未配席リストを開く">未配席</button>
   </div>
 </section>
+
+<!-- ===== GIFTS（ご祝儀・内祝い）仕様：00_spec/09_gifts.md ===== -->
+<section class="view" id="v-gifts">
+  <h2>ご祝儀</h2>
+  <p class="sub">いただいたご祝儀と、内祝い（お返し）の手配の記録。ご祝儀の合計と内祝いの購入額は予算タブの収入・支出に自動で連動します。金額はログインした管理者だけが見られます。</p>
+  <div class="cards" id="gt-cards"></div>
+  <div class="panel">
+    <div class="row">
+      <input id="gt-q" placeholder="贈り主・表書きで検索" style="width:180px">
+      <select id="gt-side"><option value="">サイド：すべて</option><option value="groom">新郎側</option><option value="bride">新婦側</option><option value="none">未設定</option></select>
+      <select id="gt-circle"><option value="">友人圏：すべて</option></select>
+      <select id="gt-kind"><option value="">種類：すべて</option></select>
+      <select id="gt-state"><option value="">内祝い：すべて</option></select>
+      <select id="gt-thanks"><option value="">お礼状：すべて</option><option value="unsent">未送付</option><option value="sent">送付済</option></select>
+      <select id="gt-sort"><option value="received">並び：受け取り日（新しい順）</option><option value="amount">並び：金額（多い順）</option><option value="name">並び：名前順</option></select>
+      <span class="sp"></span>
+      <button class="btn o s" id="gt-csv">CSVダウンロード</button>
+      <button class="btn s" id="gt-add">＋ ご祝儀を登録</button>
+    </div>
+    <div class="tblwrap"><table class="btbl gtl"><thead><tr>
+      <th>贈り主</th><th>表書きの名義</th><th>サイド</th><th>種類</th><th class="num">金額（円）</th><th>内祝い状況</th><th>お礼状</th><th></th></tr></thead>
+      <tbody id="gt-body"></tbody></table></div>
+    <p class="note" style="margin:10px 0 0" id="gt-count"></p>
+  </div>
+</section>
 </main>
 
 
@@ -306,10 +332,16 @@
     <div class="card"><div class="k">ホテル支払い分</div><div class="v" id="g-hotel">¥0</div><div class="d note" id="g-hotel-n"></div></div>
     <div class="card"><div class="k">個別手配分</div><div class="v" id="g-ext">¥0</div><div class="d note" id="g-ext-n"></div></div>
     <div class="card"><div class="k">お車代</div><div class="v" id="g-fee">¥0</div><div class="d note">ゲスト一覧の「お車代」の合計</div></div>
-    <div class="card"><div class="k">ご祝儀見込み</div><div class="v" id="g-gift">¥0</div>
-      <div class="d note">大人 <span id="g-gift-n">0</span> 名 × <input type="number" id="b-per" min="0" step="1000" class="per"> 円</div></div>
+    <div class="card"><div class="k" id="g-gift-k">ご祝儀見込み</div><div class="v" id="g-gift">¥0</div>
+      <div class="d note" id="g-gift-act" hidden></div>
+      <div class="d note"><span id="g-gift-est-k">見込み：</span>大人 <span id="g-gift-n">0</span> 名 × <input type="number" id="b-per" min="0" step="1000" class="per"> 円<span id="g-gift-est"></span></div></div>
     <div class="card" id="g-bal-card"><div class="k">収支見込み</div><div class="v" id="g-bal">¥0</div>
       <div class="d note" id="g-bal-n"></div></div>
+  </div>
+
+  <div class="panel">
+    <div class="row"><b>ご祝儀・内祝い（自動連動）</b><span class="note">ご祝儀タブの記録から毎回集計します。ここでは編集できません。行をクリックするとご祝儀タブへ</span></div>
+    <div class="tblwrap"><table class="btbl" id="b-link"><thead><tr><th>収支</th><th>項目</th><th class="num">件数</th><th class="num">金額</th><th>集計の対象</th><th></th></tr></thead><tbody></tbody></table></div>
   </div>
 
   <div class="grid2">
@@ -382,6 +414,8 @@
 <div class="modal" id="m-table"><div class="mbox" id="m-table-box"></div></div>
 <div class="modal" id="m-seatask"><div class="mbox" id="m-seatask-box"></div></div>
 <div class="modal" id="m-ev"><div class="mbox" id="m-ev-box"></div></div>
+<div class="modal" id="m-gift"><div class="mbox" id="m-gift-box"></div></div>
+<div class="modal" id="m-giftd"><div class="mbox wide" id="m-giftd-box"></div></div>
 <div class="modal" id="m-qr"><div class="mbox" id="m-qr-box" style="width:380px;text-align:center"></div></div>
 
 <!-- B4: 空席をクリックしたときの配席ポップオーバー -->

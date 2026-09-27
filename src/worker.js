@@ -9,7 +9,8 @@
      POST /api/reception/items/:id/hand  お渡し済 / 取り消し
    DB アクセスはすべてサービスロールキー（Secret: SUPABASE_SERVICE_ROLE_KEY）。
    Cookie の署名は Secret: RECEPTION_COOKIE_SECRET（HMAC-SHA256）。
-   仕様：00_spec/reception.md（v1）、03_reception-v2.md（v2）、04_reception-v2.1.md（同行者）
+   仕様：00_spec/08_reception.md（v1）、03_reception-v2.md（v2）、04_reception-v2.1.md（同行者）
+   ご祝儀・内祝い（gifts / gift_givers / gift_returns）はここでは一切読まない・返さない（00_spec/09_gifts.md）
    ============================================================ */
 
 const COOKIE = 'rcpt';

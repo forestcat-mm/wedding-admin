@@ -1,7 +1,7 @@
 /* 受付ポップアップの判定のテスト（v2.3） */
 import { planCheckin, enterAllowed, ENTER_GUARD_MS } from '../public/reception/checkin-logic.js';
 
-const ok = (name, cond) => console.log((cond ? 'ok  ' : 'FAIL') + ' ' + name);
+const ok = (name, cond) => { console.log((cond ? 'ok  ' : 'FAIL') + ' ' + name); if (!cond) process.exitCode = 1; };
 const g = { id: 'g1', items: [
   { id: 'i1', label: 'お車代', handed_at: null },
   { id: 'i2', label: 'お礼', handed_at: '2026-09-26T01:00:00Z' },

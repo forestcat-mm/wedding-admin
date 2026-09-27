@@ -39,6 +39,10 @@ const db = {
   settings: [{ key: 'reception_id_enabled', value: true }],
   circles: [{ id: 'c1', name: '大学' }, { id: 'c2', name: '会社' }],
   guestCircles: [{ guest_id: G1, circle_id: 'c1' }, { guest_id: G1, circle_id: 'c2' }, { guest_id: G_ABSENT, circle_id: 'c1' }],
+  /* ご祝儀（09_gifts）。受付 API からは一切読まれず、返らないこと */
+  gifts: [{ id: 'gift1', giver_name: null, envelope_name: 'ENVELOPE_SECRET', side: 'groom', kind: 'cash', currency: 'JPY', amount: 987654, amount_jpy: 987654, deleted_at: null }],
+  giftGivers: [{ gift_id: 'gift1', guest_id: G1 }],
+  giftReturns: [{ id: 'ret1', gift_id: 'gift1', item_name: 'RETURN_SECRET', price_jpy: 43210, shipping_jpy: 0, status: 'ordered', deleted_at: null }],
 };
 const log = [];
 globalThis.fetch = async (url, init = {}) => {
@@ -59,7 +63,8 @@ globalThis.fetch = async (url, init = {}) => {
     if (v === 'is.null') return r[k] == null; if (v === 'not.is.null') return r[k] != null;
     if (v.startsWith('eq.')) return String(r[k]) === decodeURIComponent(v.slice(3)); return true;
   }));
-  const src = { reception_tokens: db.tokens, guests: db.guests, reception_items: db.items, seating_assignments: db.seats, seating_tables: db.tables, replies_admin: db.replies, reply_people: db.people, app_settings: db.settings, circles: db.circles, guest_circles: db.guestCircles }[table] || [];
+  const src = { reception_tokens: db.tokens, guests: db.guests, reception_items: db.items, seating_assignments: db.seats, seating_tables: db.tables, replies_admin: db.replies, reply_people: db.people, app_settings: db.settings, circles: db.circles, guest_circles: db.guestCircles,
+    gifts: db.gifts, gift_givers: db.giftGivers, gift_returns: db.giftReturns }[table] || [];
   if (init.method === 'PATCH') { const rows = filt(src); rows.forEach(r => Object.assign(r, JSON.parse(init.body))); return new Response(JSON.stringify(rows.map(pick))); }
   return new Response(JSON.stringify(filt(src).map(pick)));
 };
@@ -68,7 +73,7 @@ const env = { SUPABASE_URL: 'https://x.supabase.co', SUPABASE_ANON_KEY: 'ANON', 
   ASSETS: { fetch: async () => new Response('asset') } };
 const ctx = { waitUntil: p => p };
 const req = (path, init = {}) => worker.fetch(new Request('https://admin.example' + path, init), env, ctx);
-const ok = (name, cond) => console.log((cond ? 'ok  ' : 'FAIL') + ' ' + name);
+const ok = (name, cond) => { console.log((cond ? 'ok  ' : 'FAIL') + ' ' + name); if (!cond) process.exitCode = 1; };
 
 // 1. 短縮URL → Cookie
 let r = await req('/r/AbCdEfGh');
@@ -141,3 +146,23 @@ ok('v2.2: same reception_id returns when ON again', b.guests[0].reception_id ===
 db.settings.length = 0; _resetSettingsCache();
 r = await req('/api/reception/me', { headers: { cookie } }); b = await r.json();
 ok('v2.2: missing setting defaults to ON', b.reception_id_enabled === true);
+
+// 09_gifts: 受付 API はご祝儀の表を読まず、ご祝儀の情報を返さない（トークンの端末・管理者のどちらでも）
+db.tokens[0].is_active = true; db.tokens[0].expires_at = null;
+const logFrom = log.length;
+const bodies = [];
+for (const h of [{ cookie }, { authorization: 'Bearer good' }]) {
+  for (const path of ['/api/reception/me', '/api/reception/guests']) {
+    r = await req(path, { headers: h }); bodies.push(await r.text());
+  }
+}
+const giftTxt = bodies.join('\n');
+ok('09_gifts: reception API never queries gifts / gift_givers / gift_returns',
+   !log.slice(logFrom).some(x => /\/rest\/v1\/gift(s|_givers|_returns)\b/.test(x)));
+ok('09_gifts: reception API responses carry no gift info',
+   !giftTxt.includes('987654') && !giftTxt.includes('ENVELOPE_SECRET') && !giftTxt.includes('RETURN_SECRET') && !giftTxt.includes('43210')
+   && !/"(gift|gifts|amount|amount_jpy|gift_id|envelope_name|return_needed|thank_you_sent)"\s*:/.test(giftTxt));
+for (const path of ['/api/reception/gifts', '/api/gifts']) {
+  r = await req(path, { headers: { cookie } });
+  ok(`09_gifts: ${path} → 404`, r.status === 404);
+}
