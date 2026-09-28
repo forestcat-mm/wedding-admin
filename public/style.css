@@ -660,3 +660,15 @@ input.gtamt:focus{color:var(--ink);border-color:var(--ink2)}
 .gtl td small.note{display:block;font-size:10.5px}
 .gtdstat{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#FBF9F5;border:1px solid var(--line);padding:8px 10px;margin:6px 0 12px}
 .gpop-body .f input{font-size:16px}
+/* ご祝儀 v3（00_spec/11_gifts-v3.md） */
+.gtl tr.comp td.n{padding-left:26px}
+.gtl tr.comp td.n::before{margin-left:-16px}
+.tag.dohan{background:#F2F0EC;font-size:10px;padding:0 5px;margin-right:4px}
+.tag.att.ok{background:#EAF2EC;border-color:#c9dccf;color:var(--ok)}
+.tag.att.no{background:#F6ECEC;border-color:#e6cfcf;color:var(--enji)}
+.tag.att.wait{background:#FBF3E3;border-color:#eadcbb;color:var(--warn)}
+.tag.hiki{background:#EEF3F9;border-color:#cfdcec;color:#3d6a9e}
+.gtl .goodsv{color:var(--mocha-d)}
+.goodsbox .chk1{margin-bottom:4px}
+.gthiki{min-width:640px}
+#m-gpop-box.wide2{width:560px}

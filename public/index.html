@@ -290,6 +290,7 @@
       <select id="gt-side"><option value="">サイド：すべて</option><option value="groom">新郎側</option><option value="bride">新婦側</option><option value="none">未設定</option></select>
       <select id="gt-circle"><option value="">友人圏：すべて</option></select>
       <select id="gt-source"><option value="">出席者・追加：すべて</option><option value="attendee">出席者</option><option value="manual">追加</option></select>
+      <select id="gt-att"><option value="">出欠：すべて</option><option value="attended">出席</option><option value="absent">欠席</option><option value="uninvited">招待なし</option></select>
       <select id="gt-state"><option value="">内祝い：すべて</option></select>
       <select id="gt-sort"><option value="name">並び：名前</option><option value="side">並び：サイド</option><option value="amount">並び：金額（多い順）</option><option value="received">並び：受領日時（新しい順）</option></select>
       <span class="sp"></span>
@@ -297,11 +298,11 @@
       <button class="btn s" id="gt-add">＋ ご祝儀を追加</button>
     </div>
     <div class="bulk" id="gt-bulk"><b><span id="gt-bn">0</span> 件選択</b>
-      <button class="btn s" id="gt-merge">連名にまとめる</button>
-      <span class="note">先頭の行に、ほかの行の贈り主をまとめます（受領済みの行は対象外）</span>
+      <button class="btn s" id="gt-merge" title="先頭の行に、ほかの行の贈り主をまとめます（受領済みの行は対象外）">連名にまとめる</button>
+      <button class="btn s o" id="gt-hikibulk" title="選んだ各行に、同じ引出物・引菓子を1行ずつ追加します">引出物・引菓子をまとめて設定</button>
       <span class="sp"></span><button class="btn link" id="gt-bclear">選択解除</button></div>
     <div class="tblwrap"><table class="btbl gtl"><thead><tr>
-      <th><input type="checkbox" id="gt-chkall"></th><th>贈り主</th><th>表書きの名義</th><th>サイド</th><th class="num">金額（円）</th><th>状態</th><th>内祝い状況</th><th>お礼状</th><th></th></tr></thead>
+      <th><input type="checkbox" id="gt-chkall"></th><th>贈り主</th><th>表書きの名義</th><th>サイド</th><th>出欠</th><th class="num">金額（円）</th><th>状態</th><th>内祝い状況</th><th>お礼状</th><th></th></tr></thead>
       <tbody id="gt-body"></tbody></table></div>
     <p class="note" style="margin:10px 0 0" id="gt-count"></p>
   </div>

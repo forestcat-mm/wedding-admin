@@ -556,6 +556,8 @@ CREATE TABLE public.reception_tokens (
 -- ご祝儀（00_spec/10_gifts-v2.md。v1 は 09_gifts.md）。出席者は同期で1人1件の仮（source=attendee, status=expected）を作り、「受領」で received にする。
 -- 金額：仮は expected_jpy、受領済みは amount_jpy（円換算額。JPY は amount と同じ）。予算の収入は Σ（受領済みなら amount_jpy、仮なら expected_jpy）。
 -- expected_edited：仮の金額を手で変えた印（既定値 app_settings.gift_default_jpy の変更で更新しない）。giver_name は v1 の列で、v2 では使わない（贈り主は gift_givers）。
+-- v3（00_spec/11_gifts-v3.md、00_spec/gifts-v3.sql）：attendance＝披露宴の出欠、return_policy＝内祝いの要否（v2 の return_needed を置き換えて削除）、
+-- goods_value_jpy＝品物の相当額（ご祝儀の合計・予算には入れない）
 -- updated_at のトリガーは無い（管理画面が更新時に入れる）。受付 API からは読まない
 CREATE TABLE public.gifts (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -567,7 +569,6 @@ CREATE TABLE public.gifts (
     amount numeric,
     amount_jpy integer,
     route text DEFAULT 'reception'::text NOT NULL,
-    return_needed boolean DEFAULT true NOT NULL,
     thank_you_sent boolean DEFAULT false NOT NULL,
     memo text,
     deleted_at timestamp with time zone,
@@ -579,6 +580,11 @@ CREATE TABLE public.gifts (
     received_at timestamp with time zone,
     received_by text,
     expected_edited boolean DEFAULT false NOT NULL,
+    attendance text DEFAULT 'uninvited'::text NOT NULL,
+    return_policy text DEFAULT 'needed'::text NOT NULL,
+    goods_value_jpy integer,
+    CONSTRAINT gifts_attendance_chk CHECK ((attendance = ANY (ARRAY['attended'::text, 'absent'::text, 'uninvited'::text]))),
+    CONSTRAINT gifts_return_policy_chk CHECK ((return_policy = ANY (ARRAY['needed'::text, 'hikidemono'::text, 'not_needed'::text]))),
     CONSTRAINT gifts_kind_check CHECK ((kind = ANY (ARRAY['cash'::text, 'goods'::text, 'transfer'::text, 'e_money'::text, 'other'::text]))),
     CONSTRAINT gifts_kind_chk CHECK ((kind = ANY (ARRAY['cash'::text, 'goods'::text, 'transfer'::text, 'e_money'::text, 'other'::text]))),
     CONSTRAINT gifts_route_check CHECK ((route = ANY (ARRAY['reception'::text, 'hand'::text, 'mail'::text, 'later'::text, 'other'::text]))),
@@ -620,6 +626,23 @@ CREATE TABLE public.gift_returns (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT gift_returns_status_check CHECK ((status = ANY (ARRAY['planned'::text, 'ordered'::text, 'shipped'::text, 'delivered'::text])))
+);
+
+-- ---------- gift_hikidemono ----------
+-- v3：お渡しした引出物・引菓子（1つのご祝儀に複数行）。gift_check_item_id は引出物・引菓子リスト（gift_check_items）から選んだ行。
+-- 予算には連動させない（ホテルの請求として計上済み）。updated_at の列は無い
+CREATE TABLE public.gift_hikidemono (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    gift_id uuid NOT NULL,
+    gift_check_item_id uuid,
+    category text NOT NULL,
+    name text NOT NULL,
+    price_jpy integer DEFAULT 0 NOT NULL,
+    qty integer DEFAULT 1 NOT NULL,
+    memo text,
+    deleted_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT gift_hikidemono_category_check CHECK ((category = ANY (ARRAY['引出物'::text, '引菓子'::text, 'その他'::text])))
 );
 
 -- sync_rsvp_row：rsvp 1行を replies_admin / reply_people に展開し、招待者と突き合わせる（トリガーと初回取り込みで共用）（引数に rsvp 型を使うのでテーブルの後に定義）
@@ -737,6 +760,8 @@ ALTER TABLE ONLY public.gift_givers
     ADD CONSTRAINT gift_givers_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY public.gift_returns
     ADD CONSTRAINT gift_returns_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.gift_hikidemono
+    ADD CONSTRAINT gift_hikidemono_pkey PRIMARY KEY (id);
 
 ALTER TABLE ONLY public.guest_circles
     ADD CONSTRAINT guest_circles_circle_id_fkey FOREIGN KEY (circle_id) REFERENCES public.circles(id) ON DELETE CASCADE;
@@ -762,6 +787,11 @@ ALTER TABLE ONLY public.gift_givers
     ADD CONSTRAINT gift_givers_reply_person_id_fkey FOREIGN KEY (reply_person_id) REFERENCES public.reply_people(id) ON DELETE SET NULL;
 ALTER TABLE ONLY public.gift_returns
     ADD CONSTRAINT gift_returns_gift_id_fkey FOREIGN KEY (gift_id) REFERENCES public.gifts(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.gift_hikidemono
+    ADD CONSTRAINT gift_hikidemono_gift_id_fkey FOREIGN KEY (gift_id) REFERENCES public.gifts(id) ON DELETE CASCADE;
+-- gift_check_items がある環境だけ（00_spec/gifts-v3.sql の do ブロックで張る）
+ALTER TABLE ONLY public.gift_hikidemono
+    ADD CONSTRAINT gift_hikidemono_item_fk FOREIGN KEY (gift_check_item_id) REFERENCES public.gift_check_items(id) ON DELETE SET NULL;
 
 
 -- ============================================================
@@ -774,6 +804,7 @@ CREATE INDEX reception_items_guest_idx ON public.reception_items USING btree (gu
 CREATE INDEX gift_givers_gift_idx ON public.gift_givers USING btree (gift_id);
 CREATE UNIQUE INDEX gift_givers_person_uniq ON public.gift_givers USING btree (reply_person_id) WHERE (reply_person_id IS NOT NULL);
 CREATE INDEX gift_returns_gift_idx ON public.gift_returns USING btree (gift_id);
+CREATE INDEX gift_hikidemono_gift_idx ON public.gift_hikidemono USING btree (gift_id);
 
 
 -- ============================================================
@@ -819,6 +850,7 @@ ALTER TABLE public.reception_tokens ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.gifts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.gift_givers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.gift_returns ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.gift_hikidemono ENABLE ROW LEVEL SECURITY;
 
 
 -- ============================================================
@@ -847,6 +879,7 @@ CREATE POLICY "admin all" ON public.reception_tokens TO authenticated USING (tru
 CREATE POLICY "admin all" ON public.gifts TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "admin all" ON public.gift_givers TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "admin all" ON public.gift_returns TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "admin all" ON public.gift_hikidemono TO authenticated USING (true) WITH CHECK (true);
 
 
 -- ============================================================

@@ -44,6 +44,8 @@ const db = {
           { id: 'gift2', source: 'attendee', status: 'expected', expected_jpy: 876543, deleted_at: null }],
   giftGivers: [{ id: 'gv1', gift_id: 'gift1', reply_person_id: 'p1', guest_id: null, name: null }, { id: 'gv2', gift_id: 'gift2', reply_person_id: 'c1', guest_id: null, name: null }],
   giftReturns: [{ id: 'ret1', gift_id: 'gift1', item_name: 'RETURN_SECRET', price_jpy: 43210, shipping_jpy: 0, status: 'ordered', deleted_at: null }],
+  /* v3：お渡しした引出物・引菓子 */
+  giftHiki: [{ id: 'hk1', gift_id: 'gift1', gift_check_item_id: null, category: '引出物', name: 'HIKI_SECRET', price_jpy: 54321, qty: 1, deleted_at: null }],
 };
 const log = [];
 globalThis.fetch = async (url, init = {}) => {
@@ -65,7 +67,7 @@ globalThis.fetch = async (url, init = {}) => {
     if (v.startsWith('eq.')) return String(r[k]) === decodeURIComponent(v.slice(3)); return true;
   }));
   const src = { reception_tokens: db.tokens, guests: db.guests, reception_items: db.items, seating_assignments: db.seats, seating_tables: db.tables, replies_admin: db.replies, reply_people: db.people, app_settings: db.settings, circles: db.circles, guest_circles: db.guestCircles,
-    gifts: db.gifts, gift_givers: db.giftGivers, gift_returns: db.giftReturns }[table] || [];
+    gifts: db.gifts, gift_givers: db.giftGivers, gift_returns: db.giftReturns, gift_hikidemono: db.giftHiki }[table] || [];
   if (init.method === 'PATCH') { const rows = filt(src); rows.forEach(r => Object.assign(r, JSON.parse(init.body))); return new Response(JSON.stringify(rows.map(pick))); }
   return new Response(JSON.stringify(filt(src).map(pick)));
 };
@@ -158,12 +160,12 @@ for (const h of [{ cookie }, { authorization: 'Bearer good' }]) {
   }
 }
 const giftTxt = bodies.join('\n');
-ok('09_gifts: reception API never queries gifts / gift_givers / gift_returns',
-   !log.slice(logFrom).some(x => /\/rest\/v1\/gift(s|_givers|_returns)\b/.test(x)));
+ok('09_gifts: reception API never queries gifts / gift_givers / gift_returns / gift_hikidemono',
+   !log.slice(logFrom).some(x => /\/rest\/v1\/gift(s|_givers|_returns|_hikidemono)\b/.test(x)));
 ok('09_gifts: reception API responses carry no gift info',
    !giftTxt.includes('987654') && !giftTxt.includes('876543') && !giftTxt.includes('ENVELOPE_SECRET') && !giftTxt.includes('RETURN_SECRET')
-   && !giftTxt.includes('RECEIVER_SECRET') && !giftTxt.includes('43210')
-   && !/"(gift|gifts|amount|amount_jpy|expected_jpy|gift_id|envelope_name|return_needed|thank_you_sent|received_by|status)"\s*:/.test(giftTxt));
+   && !giftTxt.includes('RECEIVER_SECRET') && !giftTxt.includes('43210') && !giftTxt.includes('HIKI_SECRET') && !giftTxt.includes('54321')
+   && !/"(gift|gifts|amount|amount_jpy|expected_jpy|goods_value_jpy|gift_id|envelope_name|return_policy|attendance|thank_you_sent|received_by|status)"\s*:/.test(giftTxt));
 for (const path of ['/api/reception/gifts', '/api/gifts']) {
   r = await req(path, { headers: { cookie } });
   ok(`09_gifts: ${path} → 404`, r.status === 404);

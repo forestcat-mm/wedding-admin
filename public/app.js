@@ -224,8 +224,9 @@ const S = {
 /* ご祝儀（00_spec/10_gifts-v2.md）。rows は { gift, givers, returns }（gifts-logic.js の形）。
    all は削除済みを含む gifts（同期の計画に使う）、gifts は削除されていないもの */
 const GF = {
-  loaded: false, all: [], gifts: [], givers: [], returns: [], rows: [], byId: new Map(), ofGuest: new Map(),
+  loaded: false, all: [], gifts: [], givers: [], returns: [], hiki: [], rows: [], byId: new Map(), ofGuest: new Map(),
   sel: new Set(), view: [],
+  checkItems: undefined,           /* v3：引出物・引菓子リストの選択肢（未読込 undefined／テーブル無し null） */
 };
 /* v2.2: 受付IDを使うか（app_settings.reception_id_enabled、既定 true） */
 const ridOn = () => S.settings.reception_id_enabled !== false;
@@ -6053,9 +6054,11 @@ $('#rt-issue').addEventListener('click', async () => {
 });
 
 /* ============================================================
-   ご祝儀・内祝い（00_spec/10_gifts-v2.md。内祝いは 09_gifts.md）
+   ご祝儀・内祝い（00_spec/11_gifts-v3.md・10_gifts-v2.md。内祝いは 09_gifts.md）
    出席者は仮（status=expected）で自動的に並べ、「受領」で実績（received）にする。
-   gifts / gift_givers / gift_returns はログインユーザーの supabase-js で読み書きする（RLS は authenticated のみ）。
+   v3：組（本人＋同行者）単位の並び、出欠（attendance）、内祝いの要否（return_policy）、
+       お渡しした引出物・引菓子（gift_hikidemono。予算には連動しない）、品物の相当額（goods_value_jpy。合計・予算に入れない）
+   gifts / gift_givers / gift_returns / gift_hikidemono はログインユーザーの supabase-js で読み書きする（RLS は authenticated のみ）。
    受付 API（src/worker.js）はこれらの表を読まない。削除は deleted_at（論理削除）、変更は change_log に記録。
    gifts・gift_returns には updated_at のトリガーが無いので、更新時はここで updated_at を入れる
    ============================================================ */
@@ -6078,21 +6081,30 @@ async function logMany(rows) {
 
 /* ---- 読み込み ---- */
 async function loadGifts() {
-  const [g, gv, rt] = await Promise.all([
+  const [g, gv, rt, hk] = await Promise.all([
     sb.from('gifts').select('*'),
     sb.from('gift_givers').select('*').order('sort').order('created_at'),
     sb.from('gift_returns').select('*').is('deleted_at', null).order('created_at'),
+    sb.from('gift_hikidemono').select('*').is('deleted_at', null).order('created_at'),
   ]);
-  const bad = [g, gv, rt].find(r => r.error);
+  const bad = [g, gv, rt, hk].find(r => r.error);
   if (bad) {
     toast('ご祝儀の読み込みに失敗：' + bad.error.message, 'err');
-    GF.loaded = false; GF.all = []; GF.gifts = []; GF.givers = []; GF.returns = [];
+    GF.loaded = false; GF.all = []; GF.gifts = []; GF.givers = []; GF.returns = []; GF.hiki = [];
   } else {
     GF.all = g.data || []; GF.gifts = GF.all.filter(x => !x.deleted_at);
-    GF.givers = gv.data || []; GF.returns = rt.data || [];
+    GF.givers = gv.data || []; GF.returns = rt.data || []; GF.hiki = hk.data || [];
     GF.loaded = true;
   }
+  if (GF.checkItems === undefined) await loadCheckItems();
   indexGifts();
+}
+/* v3：引出物・引菓子リスト（gift_check_items）。テーブルが無い環境では null（手入力のみ） */
+async function loadCheckItems() {
+  try {
+    const { data, error } = await sb.from('gift_check_items').select('id,category,type_no,sort,brand,name,variant,unit_price');
+    GF.checkItems = error ? null : GL.checkItemOptions(data || []);
+  } catch { GF.checkItems = null; }
 }
 /* 贈り主の表示用（gifts-logic.js の giverView） */
 function giverView(x, personById, attIds) {
@@ -6114,17 +6126,15 @@ function giverView(x, personById, attIds) {
 function indexGifts() {
   const personById = new Map(S.people.map(p => [p.id, p]));
   const attIds = new Set(GL.attendees(S.replies, S.people).map(a => a.person.id));
-  const giversOf = new Map(), retsOf = new Map();
-  for (const x of GF.givers) {
-    if (!giversOf.has(x.gift_id)) giversOf.set(x.gift_id, []);
-    giversOf.get(x.gift_id).push(x);
-  }
-  for (const r of GF.returns) {
-    if (!retsOf.has(r.gift_id)) retsOf.set(r.gift_id, []);
-    retsOf.get(r.gift_id).push(r);
-  }
+  const by = list => {
+    const m = new Map();
+    for (const x of list) { if (!m.has(x.gift_id)) m.set(x.gift_id, []); m.get(x.gift_id).push(x); }
+    return m;
+  };
+  const giversOf = by(GF.givers), retsOf = by(GF.returns), hikiOf = by(GF.hiki || []);
   GF.rows = GF.gifts.map(gift => ({
-    gift, givers: (giversOf.get(gift.id) || []).map(x => giverView(x, personById, attIds)), returns: retsOf.get(gift.id) || [],
+    gift, givers: (giversOf.get(gift.id) || []).map(x => giverView(x, personById, attIds)),
+    returns: retsOf.get(gift.id) || [], hiki: hikiOf.get(gift.id) || [],
   }));
   GF.byId = new Map(GF.rows.map(r => [r.gift.id, r]));
   GF.ofGuest = new Map();                  /* 招待者 → ご祝儀（出席者は回答の紐付け先の招待者） */
@@ -6197,7 +6207,8 @@ function syncAttendees(manual) {
       let created = 0;
       if (plan.create.length) {
         const gifts = plan.create.map(c => ({ id: crypto.randomUUID(), source: 'attendee', status: 'expected',
-                                             expected_jpy: c.expected, side: c.side }));
+                                             expected_jpy: c.expected, side: c.side,
+                                             attendance: c.attendance, return_policy: c.return_policy }));
         const { error } = await sb.from('gifts').insert(gifts);
         if (error) throw error;
         const givers = plan.create.map((c, i) => ({ gift_id: gifts[i].id, reply_person_id: c.personId, sort: 0 }));
@@ -6236,6 +6247,7 @@ $('#gt-sync').addEventListener('click', () => syncAttendees(true));
 /* ---- 小さなポップアップ（確認・金額入力）。onOk が false を返したら閉じない ---- */
 function giftPopup({ title, body = '', ok = 'OK', danger = false, onOk, focus }) {
   const box = $('#m-gpop-box');
+  box.classList.remove('wide2');
   box.innerHTML = `<h3>${esc(title)}</h3><div class="gpop-body">${body}</div>
     <div class="row" style="margin:12px 0 0"><span class="sp"></span>
       <button type="button" class="btn o" data-close>キャンセル</button>
@@ -6376,7 +6388,8 @@ function openUnmerge(id) {
             continue;
           }
           const nid = crypto.randomUUID();
-          const { error } = await sb.from('gifts').insert({ id: nid, source: part.source, status: 'expected', expected_jpy: part.expected, side: part.side });
+          const { error } = await sb.from('gifts').insert({ id: nid, source: part.source, status: 'expected', expected_jpy: part.expected,
+            side: part.side, attendance: part.attendance, return_policy: part.return_policy });
           if (error) throw error;
           const { error: e2 } = await sb.from('gift_givers').update({ gift_id: nid, sort: 0 }).eq('id', part.giverId);
           if (e2) throw e2;
@@ -6393,7 +6406,9 @@ function openUnmerge(id) {
 }
 
 /* ---- 5. 一覧 ---- */
-const GT_STATE_CLS = { pending: '', none: 'grey', todo: 'wait', partial: 'man', shipped: 'pp', delivered: 'ok' };
+const GT_STATE_CLS = { hikidemono: 'hiki', pending: '', none: 'grey', todo: 'wait', partial: 'man', shipped: 'pp', delivered: 'ok' };
+const GT_ATT_CLS = { attended: 'ok', absent: 'no', uninvited: 'wait' };
+const attendTag = a => `<span class="tag att ${GT_ATT_CLS[a] || 'grey'}">${esc(GL.ATTENDANCE_LABEL[a] || '—')}</span>`;
 const gtSideTag = s => s === 'groom' ? '<span class="tag g">新郎側</span>'
   : s === 'bride' ? '<span class="tag b">新婦側</span>' : '<span class="note">未設定</span>';
 const giverKindTag = x => x.kind === 'person' ? (x.idx === 0 ? '' : '<span class="tag grey">同行者</span>')
@@ -6406,7 +6421,7 @@ function fillGiftSelects() {
 }
 const giftFilter = () => ({
   q: $('#gt-q').value.trim(), status: $('#gt-status').value, side: $('#gt-side').value,
-  circle: $('#gt-circle').value, source: $('#gt-source').value, state: $('#gt-state').value,
+  circle: $('#gt-circle').value, source: $('#gt-source').value, attendance: $('#gt-att').value, state: $('#gt-state').value,
 });
 const circleIdsOf = gid => (S.circlesOfGuest.get(gid) || []).map(c => c.id);
 function renderGifts() {
@@ -6424,10 +6439,12 @@ function renderGifts() {
     <div class="card"><div class="k">内祝い購入額</div><div class="v">${yen(sm.returnCost)}</div>
       <div class="note">商品代＋送料${sm.returnPlanned ? `（ほかに予定 ${yen(sm.returnPlanned)}）` : ''}</div></div>
     <div class="card${sm.todo ? ' warn' : ''} gt-todo" title="未手配で絞り込む"><div class="k">内祝い 未手配</div>
-      <div class="v">${sm.todo}<small>件</small></div><div class="note">受領済みで内祝いが必要、まだ注文していないもの</div></div>`;
+      <div class="v">${sm.todo}<small>件</small></div><div class="note">内祝い「必要」で受領済み、まだ注文していないもの</div></div>
+    <div class="card"><div class="k">品物（相当額）</div><div class="v">${yen(sm.goods.total)}</div>
+      <div class="note">${sm.goods.count} 件。ご祝儀の合計・予算には含めません</div></div>`;
   $('#gt-cards .gt-todo').addEventListener('click', () => { $('#gt-state').value = 'todo'; renderGifts(); });
   if (!GF.loaded) {
-    $('#gt-body').innerHTML = '<tr><td colspan="9" class="empty">ご祝儀の記録を読み込めませんでした。再読み込みしてください。</td></tr>';
+    $('#gt-body').innerHTML = '<tr><td colspan="10" class="empty">ご祝儀の記録を読み込めませんでした。再読み込みしてください。</td></tr>';
     $('#gt-count').textContent = ''; updateGiftBulk();
     return;
   }
@@ -6439,17 +6456,21 @@ function renderGifts() {
     const comp = GL.companionTargets(row, GF.rows);
     const foreign = rec && g.currency && g.currency !== 'JPY' && g.amount != null;
     const amt = rec ? g.amount_jpy : g.expected_jpy;
-    return `<tr class="gtrow${rec ? ' rec' : ' exp'}${GF.sel.has(g.id) ? ' sel' : ''}" data-gift="${g.id}">
-      <td class="ck"><input type="checkbox" class="gtchk" data-g="${g.id}"${GF.sel.has(g.id) ? ' checked' : ''}${rec ? ' title="受領済みの行は連名にまとめられません"' : ''}></td>
-      <td class="n"><b>${row.givers.map(x => `${esc(x.name)}${giverKindTag(x)}`).join('<span class="dot">・</span>') || '（贈り主未設定）'}</b>${
+    const compRow = GL.isCompanionRow(row), hk = GL.liveHiki(row);
+    return `<tr class="gtrow${rec ? ' rec' : ' exp'}${compRow ? ' comp' : ''}${GF.sel.has(g.id) ? ' sel' : ''}" data-gift="${g.id}">
+      <td class="ck"><input type="checkbox" class="gtchk" data-g="${g.id}"${GF.sel.has(g.id) ? ' checked' : ''}></td>
+      <td class="n">${compRow ? '<span class="tag dohan">同行</span>' : ''}<b>${row.givers.map(x => `${esc(x.name)}${compRow && x === row.givers[0] ? '' : giverKindTag(x)}`).join('<span class="dot">・</span>') || '（贈り主未設定）'}</b>${
         n > 1 ? `<span class="tag nbadge" title="連名">${n}名</span>` : ''}${g.source === 'manual' ? '<span class="tag wait">追加</span>' : ''}
+        ${hk.length ? `<small class="note" title="お渡しした引出物・引菓子">🎁 ${esc(GL.hikiNames(row))}</small>` : ''}
         ${stale ? `<small class="stalewarn">⚠ 出席者ではなくなりました${rec ? '' : '（次の同期で整理されます）'}</small>` : ''}
         ${comp.length ? `<small><button class="btn link" data-gcomp="${g.id}">同行者とまとめる（${comp.length}名）</button></small>` : ''}</td>
       <td>${esc(g.envelope_name || '')}</td>
       <td>${gtSideTag(g.side)}</td>
+      <td>${attendTag(g.attendance)}</td>
       <td class="num"><input class="gtamt${rec ? '' : ' exp'}" data-amt="${g.id}" type="text" inputmode="numeric" value="${amt ?? ''}" aria-label="金額（円）" title="${rec ? '受領額（円）' : '仮の金額（円）'}${g.expected_edited && !rec ? '・手で変更済み' : ''}">${
         rec ? (foreign ? `<br><span class="note">${esc(g.currency)} ${Number(g.amount).toLocaleString('ja-JP')}</span>` : '')
-            : '<br><span class="tag karitag">仮</span>'}</td>
+            : '<br><span class="tag karitag">仮</span>'}${
+        GL.goodsValue(g) ? `<br><span class="note goodsv" title="品物の相当額（合計・予算には含めない）">品物 ${yen(GL.goodsValue(g))}</span>` : ''}</td>
       <td>${rec
         ? `<span class="tag ok">受領済み</span><small class="note">${esc(fmtDT(g.received_at))}</small>
            <button class="btn link s" data-gundo="${g.id}">取消</button>`
@@ -6458,9 +6479,9 @@ function renderGifts() {
         rs.length ? `<br><span class="note">${rs.length} 件 ${yen(rs.reduce((s, r) => s + GL.retAmount(r), 0))}</span>` : ''}</td>
       <td><label class="chk1"><input type="checkbox" data-thx="${g.id}"${g.thank_you_sent ? ' checked' : ''}><span>${g.thank_you_sent ? '送付済' : '未送付'}</span></label></td>
       <td><button class="btn s o" data-gdet="${g.id}">詳細</button></td></tr>`;
-  }).join('') || `<tr><td colspan="9" class="empty">${GF.rows.length ? '該当するご祝儀がありません。' : 'まだありません。出席者は自動で並びます（「出席者を同期」）。'}</td></tr>`;
+  }).join('') || `<tr><td colspan="10" class="empty">${GF.rows.length ? '該当するご祝儀がありません。' : 'まだありません。出席者は自動で並びます（「出席者を同期」）。'}</td></tr>`;
   if (rows.length) $('#gt-body').insertAdjacentHTML('beforeend',
-    `<tr class="tot"><td></td><td colspan="3">合計（表示中 ${rows.length} 件）</td>
+    `<tr class="tot"><td></td><td colspan="4">合計（表示中 ${rows.length} 件）</td>
      <td class="num">${yen(rows.reduce((s, r) => s + GL.giftValue(r.gift), 0))}</td><td colspan="4"></td></tr>`);
   $('#gt-count').textContent = `${rows.length} 件表示 ／ ${GF.rows.length} 件（受領済み ${sm.received.count}・仮 ${sm.expected.count}）`;
   wireGiftRows();
@@ -6511,7 +6532,12 @@ $('#gt-merge').addEventListener('click', () => {
   const hidden = [...GF.sel].map(id => GF.byId.get(id)).filter(r => r && !shown.includes(r));
   openMerge([...shown, ...hidden]);
 });
-['#gt-q', '#gt-status', '#gt-side', '#gt-circle', '#gt-source', '#gt-state', '#gt-sort'].forEach(id =>
+$('#gt-hikibulk').addEventListener('click', () => {
+  const rows = [...GF.sel].map(id => GF.byId.get(id)).filter(Boolean);
+  if (!rows.length) { toast('行を選んでください', 'err'); return; }
+  openHikiBulk(rows);
+});
+['#gt-q', '#gt-status', '#gt-side', '#gt-circle', '#gt-source', '#gt-att', '#gt-state', '#gt-sort'].forEach(id =>
   $(id).addEventListener(id === '#gt-q' ? 'input' : 'change', renderGifts));
 $('#gt-add').addEventListener('click', () => openManualGift());
 
@@ -6663,6 +6689,9 @@ function openManualGift(preset = {}) {
     const rec = { id, source: 'manual', status: 'received', expected_jpy: v ?? 0, amount_jpy: v, amount: v, currency: 'JPY',
       received_at: nowISO(), received_by: S.me?.email ?? null, side: $('#gtf-side').value || null,
       envelope_name: $('#gtf-env').value.trim() || null, kind: f.kind, route: $('#gtf-route').value, memo: $('#gtf-memo').value.trim() || null };
+    /* v3：欠席の招待客を選んだら absent、名前の直接入力だけなら uninvited。内祝いの要否の初期値は「必要」 */
+    rec.attendance = GL.manualAttendance(sel);
+    rec.return_policy = GL.defaultReturnPolicy(rec.attendance);
     const givers = [...sel.map(gid => ({ guest_id: gid })), ...GL.splitNames(f.names).map(name => ({ name }))]
       .map((x, i) => ({ gift_id: id, sort: i, ...x }));
     const btns = $$('#gtf-save, #gtf-next'); btns.forEach(b => { b.disabled = true; });
@@ -6688,12 +6717,15 @@ function openManualGift(preset = {}) {
 }
 
 /* ---- 詳細（表書き・種類・経路・内祝い要否・お礼状・メモ・外貨、内祝いの手配） ---- */
-const GIFT_KEYS = ['envelope_name', 'side', 'kind', 'route', 'return_needed', 'thank_you_sent', 'memo', 'currency', 'amount', 'amount_jpy', 'expected_jpy'];
+const GIFT_KEYS = ['envelope_name', 'side', 'kind', 'route', 'return_policy', 'attendance', 'goods_value_jpy', 'thank_you_sent', 'memo',
+  'currency', 'amount', 'amount_jpy', 'expected_jpy'];
 function openGiftDetail(id) {
   const row = GF.byId.get(id);
   if (!row) { toast('このご祝儀は見つかりません（削除された可能性があります）', 'err'); return; }
   const g = row.gift, rec = g.status === 'received', rs = GL.liveReturns(row), st = GL.returnState(row);
   const guide = GL.returnGuide(g);
+  const hk = GL.liveHiki(row), hkSum = GL.hikiTotal(row);
+  const goodsOn = g.kind === 'goods' || GL.goodsValue(g) > 0;
   const retSum = rs.reduce((s, r) => s + GL.retAmount(r), 0);
   const guideTag = !guide || retSum === 0 ? ''
     : retSum < guide.low ? '<span class="tag wait">参考額より少ない</span>'
@@ -6721,6 +6753,17 @@ function openGiftDetail(id) {
     <div class="two">
       <div class="f"><label>種類</label><select id="gd-kind">${GL.KINDS.map(([v, l]) => `<option value="${v}"${g.kind === v ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
       <div class="f"><label>経路</label><select id="gd-route">${GL.ROUTES.map(([v, l]) => `<option value="${v}"${g.route === v ? ' selected' : ''}>${l}</option>`).join('')}</select></div></div>
+    <div class="two">
+      <div class="f"><label>披露宴の出欠</label>${g.source === 'manual'
+        ? `<select id="gd-att">${GL.ATTENDANCES.filter(([v]) => v !== 'attended' || g.attendance === 'attended').map(([v, l]) =>
+            `<option value="${v}"${g.attendance === v ? ' selected' : ''}>${l}</option>`).join('')}</select>`
+        : `<div>${attendTag(g.attendance)} <span class="note">出席者から自動で作成</span></div>`}</div>
+      <div class="f"><label>内祝い</label><select id="gd-policy">${GL.RETURN_POLICIES.map(([v, l]) =>
+        `<option value="${v}"${(g.return_policy || 'needed') === v ? ' selected' : ''}>${l}</option>`).join('')}</select></div></div>
+    <div class="f goodsbox">
+      <label class="chk1" id="gd-goods-l"${g.kind === 'goods' ? ' hidden' : ''}><input type="checkbox" id="gd-goods"${goodsOn ? ' checked' : ''}><span>品物もいただいた</span></label>
+      <div id="gd-goodsv-f"${goodsOn ? '' : ' hidden'}><label>品物の相当額（円）<span class="note">　ご祝儀の合計・予算には含めません</span></label>
+        <input id="gd-goodsv" type="text" inputmode="numeric" value="${g.goods_value_jpy ?? ''}" style="max-width:180px"></div></div>
     <div class="money" id="gd-money"${rec ? '' : ' hidden'}>
       <div class="two">
         <div class="f"><label>受け取った金額</label><div class="amt">
@@ -6729,18 +6772,28 @@ function openGiftDetail(id) {
         <div class="f" id="gd-jpy-f"><label>円換算額（円）</label><input id="gd-jpy" type="number" min="0" step="1" inputmode="numeric" value="${rec ? (g.amount_jpy ?? '') : ''}"></div></div></div>
     ${rec ? '' : `<div class="f" id="gd-exp-f"><label>仮の金額（円）</label><input id="gd-exp" type="text" inputmode="numeric" value="${g.expected_jpy ?? 0}" style="max-width:180px"></div>`}
     <div class="f chks">
-      <label class="chk1"><input type="checkbox" id="gd-ret"${g.return_needed ? ' checked' : ''}><span>内祝いが必要</span></label>
       <label class="chk1"><input type="checkbox" id="gd-thx"${g.thank_you_sent ? ' checked' : ''}><span>お礼状 送付済</span></label></div>
     <div class="f"><label>メモ</label><textarea id="gd-memo" rows="2">${esc(g.memo || '')}</textarea></div>
     <div id="gd-reason"></div>
     <div class="row" style="margin:0 0 14px">${g.source === 'manual' ? '<button type="button" class="btn link" id="gd-del">このご祝儀を削除</button>' : ''}
-      <span class="sp"></span><button type="button" class="btn" id="gd-save">${rec ? '保存' : '保存'}</button></div>
+      <span class="sp"></span><button type="button" class="btn" id="gd-save">保存</button></div>
 
-    <div class="row" style="margin-bottom:6px"><b>内祝いの手配</b>${g.return_needed ? '' : '<span class="tag grey">内祝い不要に設定</span>'}
+    <div class="row" style="margin-bottom:6px"><b>お渡しした引出物・引菓子</b>
+      <span class="note">合計 <b>${yen(hkSum)}</b>（${hk.length} 行）。予算には連動しません（ホテルの請求に計上済み）</span></div>
+    <div class="tblwrap"><table class="btbl gthiki"><thead><tr><th>区分</th><th>品名</th><th class="num">税込単価</th><th class="num">数量</th><th class="num">金額</th><th>メモ</th><th></th></tr></thead><tbody>${
+      hk.map(h => `<tr><td class="note">${esc(h.category)}</td><td>${esc(h.name)}${h.gift_check_item_id ? ' <span class="tag grey" title="引出物・引菓子リストから">リスト</span>' : ''}</td>
+        <td class="num">${yen(h.price_jpy)}</td><td class="num">${Number(h.qty) || 0}</td><td class="num">${yen(GL.hikiAmount(h))}</td>
+        <td class="note">${esc(h.memo || '')}</td><td><button class="btn s o" data-ehiki="${h.id}">編集</button></td></tr>`).join('')
+      || '<tr><td colspan="7" class="note">まだ記録がありません。</td></tr>'}</tbody></table></div>
+    <div id="gtd-hform"></div>
+    <div class="row" style="margin:8px 0 16px"><button class="btn s o" id="gtd-hadd">＋ 引出物・引菓子を追加</button></div>
+
+    <div class="row" style="margin-bottom:6px"><b>内祝いの手配</b><span class="tag grey">${esc(GL.RETURN_POLICY_LABEL[g.return_policy || 'needed'])}</span>
       ${st === 'pending' ? '<span class="note">受領前</span>' : `<span class="tag ${GT_STATE_CLS[st]}">${GL.RETURN_STATE_LABEL[st]}</span>`}</div>
     <div class="gtguide">${guide
-      ? `参考額 <b>${yen(guide.low)}〜${yen(guide.high)}</b>（ご祝儀 ${yen(GL.giftValue(g))}${rec ? '' : '・仮'} の 1/3〜1/2）　｜　内祝いの合計 <b>${yen(retSum)}</b> ${guideTag}`
-      : `内祝いの合計 <b>${yen(retSum)}</b>　<span class="note">金額が 0 のため参考額は出せません</span>`}
+      ? `参考額 <b>${yen(guide.low)}〜${yen(guide.high)}</b>（ご祝儀 ${yen(GL.giftValue(g))}${rec ? '' : '・仮'}${GL.goodsValue(g) ? ` ＋ 品物 ${yen(GL.goodsValue(g))}` : ''} の 1/3〜1/2）`
+      : `<span class="note">金額が 0 のため参考額は出せません</span>`}
+      　｜　お渡し済み：引出物・引菓子 <b>${yen(hkSum)}</b>　｜　内祝いの合計 <b>${yen(retSum)}</b> ${guideTag}
       <span class="note">（表示のみ。制限はしません）</span></div>
     <div class="tblwrap"><table class="btbl gtret"><thead><tr>
       <th>品名・購入先</th><th class="num">商品代</th><th class="num">送料・のし等</th><th class="num">合計</th><th>状態</th>
@@ -6773,12 +6826,31 @@ function openGiftDetail(id) {
     });
   }
   $('#gtd-unmerge')?.addEventListener('click', () => openUnmerge(id));
+  /* 品物の相当額：種類が「品物」なら常に、それ以外は「品物もいただいた」をチェックしたときに出す */
+  const syncGoods = () => {
+    const goods = $('#gd-kind').value === 'goods';
+    $('#gd-goods-l').hidden = goods;
+    $('#gd-goodsv-f').hidden = !(goods || $('#gd-goods').checked);
+  };
+  $('#gd-kind').addEventListener('change', syncGoods);
+  $('#gd-goods').addEventListener('change', syncGoods);
+  syncGoods();
+  $('#gtd-hadd').addEventListener('click', () => openHikiForm(row, null));
+  $$('[data-ehiki]', box).forEach(b => b.addEventListener('click', () =>
+    openHikiForm(row, hk.find(h => h.id === b.dataset.ehiki))));
   $('#gd-save').addEventListener('click', async e => {
     const upd = {
       envelope_name: $('#gd-env').value.trim() || null, side: $('#gd-side').value || null,
-      kind: $('#gd-kind').value, route: $('#gd-route').value,
-      return_needed: $('#gd-ret').checked, thank_you_sent: $('#gd-thx').checked, memo: $('#gd-memo').value.trim() || null,
+      kind: $('#gd-kind').value, route: $('#gd-route').value, return_policy: $('#gd-policy').value,
+      thank_you_sent: $('#gd-thx').checked, memo: $('#gd-memo').value.trim() || null,
     };
+    if ($('#gd-att')) upd.attendance = $('#gd-att').value;
+    if ($('#gd-goodsv-f').hidden) upd.goods_value_jpy = null;
+    else {
+      const gv = GL.parseYen($('#gd-goodsv').value);
+      if (gv === undefined) { toast('品物の相当額は 0 以上の整数（円）で入力してください', 'err'); return; }
+      upd.goods_value_jpy = gv;
+    }
     if (rec || receiving) {
       const c = $('#gd-cur').value, amt = $('#gd-amt').value.trim(), jpyIn = $('#gd-jpy').value.trim();
       if (amt !== '' && !(Number(amt) >= 0)) { toast('金額は 0 以上の数で入力してください', 'err'); return; }
@@ -6822,6 +6894,104 @@ function openGiftDetail(id) {
   $$('[data-eret]', box).forEach(b => b.addEventListener('click', () =>
     openReturnForm(row, rs.find(r => r.id === b.dataset.eret))));
   openModal('m-giftd');
+}
+/* ---- v3：お渡しした引出物・引菓子（gift_hikidemono。予算には連動させない） ---- */
+const HIKI_KEYS = ['gift_check_item_id', 'category', 'name', 'price_jpy', 'qty', 'memo'];
+/* 引出物・引菓子リストから選ぶ欄と、区分・品名・単価・数量・メモの欄（1件の追加・編集と一括設定で共用） */
+function hikiFieldsHTML(h) {
+  const opts = GF.checkItems;
+  return `${opts ? `<div class="f"><label>引出物・引菓子リストから選ぶ（区分・品名・単価を自動入力。あとから変更可）</label>
+      <select id="hf-item"><option value="">— リストから選ぶ／リストにない物は下に手入力 —</option>${opts.map(o =>
+        `<option value="${esc(o.id)}"${h?.gift_check_item_id === o.id ? ' selected' : ''}>${esc(o.label)}</option>`).join('')}</select></div>`
+      : '<p class="note" style="margin:0 0 8px">引出物・引菓子リストが無いため、手入力のみです。</p>'}
+    <div class="two">
+      <div class="f"><label>区分</label><select id="hf-cat">${GL.HIKI_CATEGORIES.map(c =>
+        `<option${(h?.category || '引出物') === c ? ' selected' : ''}>${c}</option>`).join('')}</select></div>
+      <div class="f req"><label>品名</label><input id="hf-name" value="${esc(h?.name || '')}"></div></div>
+    <div class="two">
+      <div class="f"><label>税込単価（円）</label><input id="hf-price" type="text" inputmode="numeric" value="${h?.price_jpy ?? ''}"></div>
+      <div class="f"><label>数量</label><input id="hf-qty" type="number" min="1" step="1" inputmode="numeric" value="${h?.qty ?? 1}"></div></div>
+    <div class="f"><label>メモ</label><input id="hf-memo" value="${esc(h?.memo || '')}"></div>`;
+}
+function wireHikiFields(host) {
+  const sel = $('#hf-item', host);
+  sel?.addEventListener('change', () => {
+    const o = (GF.checkItems || []).find(x => x.id === sel.value);
+    if (!o) return;
+    $('#hf-cat', host).value = o.category; $('#hf-name', host).value = o.name; $('#hf-price', host).value = o.price;
+  });
+}
+/* 入力を読む。問題があれば toast して null */
+function readHikiFields(host) {
+  const itemId = $('#hf-item', host)?.value || null;
+  const rec = { gift_check_item_id: itemId, category: $('#hf-cat', host).value, name: $('#hf-name', host).value.trim(),
+                price_jpy: GL.parseYen($('#hf-price', host).value) ?? 0, qty: Number($('#hf-qty', host).value), memo: $('#hf-memo', host).value.trim() || null };
+  if (!rec.name) { toast('品名は必須です', 'err'); return null; }
+  if (GL.parseYen($('#hf-price', host).value) === undefined) { toast('単価は 0 以上の整数（円）で入力してください', 'err'); return null; }
+  if (!Number.isInteger(rec.qty) || rec.qty < 1) { toast('数量は 1 以上の整数で入力してください', 'err'); return null; }
+  return rec;
+}
+function openHikiForm(row, h) {
+  const host = $('#gtd-hform');
+  host.innerHTML = `<div class="retform"><b>お渡しした引出物・引菓子を${h ? '編集' : '追加'}</b>
+    ${hikiFieldsHTML(h)}
+    <div id="hf-reason"></div>
+    <div class="row" style="margin:0">${h ? '<button type="button" class="btn link" id="hf-del">この行を削除</button>' : ''}
+      <span class="sp"></span><button type="button" class="btn o s" id="hf-cancel">やめる</button>
+      <button type="button" class="btn s" id="hf-save">保存</button></div></div>`;
+  wireHikiFields(host);
+  host.scrollIntoView({ block: 'nearest' });
+  ($('#hf-item', host) || $('#hf-name', host)).focus();
+  $('#hf-cancel', host).addEventListener('click', () => { host.innerHTML = ''; });
+  $('#hf-save', host).addEventListener('click', async e => {
+    const rec = readHikiFields(host); if (!rec) return;
+    e.target.disabled = true;
+    try {
+      if (h) {
+        const { error } = await sb.from('gift_hikidemono').update(rec).eq('id', h.id);
+        if (error) throw error;
+        const d = diffOf(Object.fromEntries(HIKI_KEYS.map(k => [k, h[k]])), rec);
+        if (Object.keys(d.after).length) await logChange('gift_hikidemono', h.id, 'edit', 'お渡しした引出物・引菓子を編集', { gift_id: row.gift.id, ...d });
+      } else {
+        const { data, error } = await sb.from('gift_hikidemono').insert({ ...rec, gift_id: row.gift.id }).select('id').single();
+        if (error) throw error;
+        await logChange('gift_hikidemono', data.id, 'create', 'お渡しした引出物・引菓子を登録', { gift_id: row.gift.id, before: null, after: rec });
+      }
+      toast('保存しました', 'ok');
+      await reloadGifts();
+      openGiftDetail(row.gift.id);
+    } catch (err) {
+      toast('保存に失敗：' + err.message, 'err');
+      e.target.disabled = false;
+    }
+  });
+  if (h) $('#hf-del', host).addEventListener('click', () =>
+    reasonBox($('#hf-reason', host), '削除', '例：記録の誤りのため', async reason => {
+      const { error } = await sb.from('gift_hikidemono').update({ deleted_at: nowISO() }).eq('id', h.id);
+      if (error) { toast('削除に失敗：' + error.message, 'err'); return; }
+      await logChange('gift_hikidemono', h.id, 'delete', reason, { gift_id: row.gift.id });
+      toast('削除しました', 'ok');
+      await reloadGifts();
+      openGiftDetail(row.gift.id);
+    }));
+}
+/* 一覧で選んだ行に、同じ引出物・引菓子をまとめて登録する（テーブルごとに同じ物を渡した場合など） */
+function openHikiBulk(rows) {
+  giftPopup({ title: `引出物・引菓子をまとめて設定（${rows.length} 件）`, ok: `${rows.length} 件に追加`,
+    body: `<p class="note" style="margin:0 0 8px">選んだ各行に、同じ品物を1行ずつ追加します（すでに記録してある品物はそのまま残ります）。</p>${hikiFieldsHTML(null)}`,
+    onOk: async box => {
+      const rec = readHikiFields(box); if (!rec) return false;
+      const ins = rows.map(r => ({ ...rec, id: crypto.randomUUID(), gift_id: r.gift.id }));
+      const { error } = await sb.from('gift_hikidemono').insert(ins);
+      if (error) { toast('登録に失敗：' + error.message, 'err'); return false; }
+      await logMany(ins.map(x => ({ target_table: 'gift_hikidemono', target_id: x.id, action: 'create',
+        reason: 'お渡しした引出物・引菓子をまとめて設定', diff: { gift_id: x.gift_id, before: null, after: rec } })));
+      toast(`${rows.length} 件に「${rec.name}」を追加しました`, 'ok');
+      GF.sel.clear();
+      await reloadGifts();
+    } });
+  wireHikiFields($('#m-gpop-box'));
+  $('#m-gpop-box').classList.add('wide2');
 }
 const RET_KEYS = ['item_name', 'shop', 'price_jpy', 'shipping_jpy', 'status', 'purchased_on', 'shipped_on', 'order_no', 'url', 'memo'];
 function openReturnForm(row, r) {

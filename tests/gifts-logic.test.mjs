@@ -1,8 +1,9 @@
-/* ご祝儀・内祝いの計算のテスト（00_spec/10_gifts-v2.md、内祝いは 09_gifts.md） */
+/* ご祝儀・内祝いの計算のテスト（00_spec/11_gifts-v3.md・10_gifts-v2.md、内祝いは 09_gifts.md） */
 import {
   attendees, planSync, syncIsEmpty, returnState, giverLabel, giverNames, isStale, giftValue, toJpy, parseYen, returnGuide,
   validateManual, summarize, budgetLink, mergePlan, unmergePlan, companionTargets, defaultTargets, matchRow, sortRows,
   csvRow, CSV_COLS, splitNames,
+  goodsValue, hikiTotal, hikiNames, liveHiki, checkItemOptions, isCompanionRow, groupKey, manualAttendance, defaultReturnPolicy,
 } from '../public/gifts-logic.js';
 
 const ok = (name, cond) => { console.log((cond ? 'ok  ' : 'FAIL') + ' ' + name); if (!cond) process.exitCode = 1; };
@@ -107,7 +108,8 @@ ok('sync: manual gifts are never touched', syncIsEmpty(plan(db2)));
 /* ================= 表示・状態 ================= */
 const person = (id, name, idx, over = {}) => ({ id, kind: 'person', name, latin: '', idx, replyId: 'R', guestId: 'G', attending: true, side: 'groom', ...over });
 const gift = over => ({ id: 'x', source: 'attendee', status: 'expected', expected_jpy: 30000, amount_jpy: null, side: 'groom', kind: 'cash', currency: 'JPY',
-  return_needed: true, thank_you_sent: false, expected_edited: false, deleted_at: null, received_at: null, ...over });
+  attendance: 'attended', return_policy: 'needed', goods_value_jpy: null,
+  thank_you_sent: false, expected_edited: false, deleted_at: null, received_at: null, ...over });
 const ret = over => ({ id: 'r', gift_id: 'x', item_name: 'カタログ', price_jpy: 10000, shipping_jpy: 500, status: 'ordered', deleted_at: null, ...over });
 const row = (g, givers = [], returns = []) => ({ gift: g, givers, returns });
 
@@ -120,7 +122,9 @@ ok('stale: attendee gift whose person no longer attends', isStale(row(gift({ sta
 
 ok('return state: expected without returns → pending', returnState(row(gift())) === 'pending');
 ok('return state: received, no returns → 未手配', returnState(row(gift({ status: 'received' }))) === 'todo');
-ok('return state: 不要', returnState(row(gift({ status: 'received', return_needed: false }))) === 'none');
+ok('return state: 不要（その他） → 不要', returnState(row(gift({ status: 'received', return_policy: 'not_needed' }))) === 'none');
+ok('return state: 不要（引出物お渡し済） → 引出物済 (even before receipt)', returnState(row(gift({ return_policy: 'hikidemono' }))) === 'hikidemono'
+   && returnState(row(gift({ status: 'received', return_policy: 'hikidemono' }))) === 'hikidemono');
 ok('return state: 予定 only → 未手配', returnState(row(gift({ status: 'received' }), [], [ret({ status: 'planned' })])) === 'todo');
 ok('return state: partial / shipped / delivered',
    returnState(row(gift({ status: 'received' }), [], [ret({ status: 'ordered' })])) === 'partial'
@@ -211,11 +215,12 @@ ok('default change: only 仮・出席者・本人・not edited', defaultTargets(
 /* ================= 絞り込み・並び替え ================= */
 const circles = { G1: ['univ'], G2: [] };
 const fr = [
-  row(gift({ id: '1', status: 'received', amount_jpy: 10000, side: 'bride', received_at: '2026-09-26T10:00:00Z' }), [person('p1', '鈴木 一郎', 0, { latin: 'SUZUKI ICHIRO', guestId: 'G1' })]),
-  row(gift({ id: '2', expected_jpy: 30000, side: 'groom' }), [person('p2', '田中 太郎', 0, { latin: 'TANAKA TARO', guestId: 'G2' })]),
-  row(gift({ id: '3', status: 'received', amount_jpy: 50000, side: null, source: 'manual', envelope_name: '寿 青木家', received_at: '2026-09-27T09:00:00Z' }), [{ id: 'n', kind: 'name', name: '青木 翔', latin: '' }]),
+  row(gift({ id: '1', status: 'received', amount_jpy: 10000, side: 'bride', received_at: '2026-09-26T10:00:00Z' }), [person('p1', '鈴木 一郎', 0, { latin: 'SUZUKI ICHIRO', guestId: 'G1', replyId: 'RS' })]),
+  row(gift({ id: '2', expected_jpy: 30000, side: 'groom' }), [person('p2', '田中 太郎', 0, { latin: 'TANAKA TARO', guestId: 'G2', replyId: 'RT' })]),
+  row(gift({ id: '3', status: 'received', amount_jpy: 50000, side: null, source: 'manual', attendance: 'uninvited', return_policy: 'needed', envelope_name: '寿 青木家', received_at: '2026-09-27T09:00:00Z' }), [{ id: 'n', kind: 'name', name: '青木 翔', latin: '' }]),
 ];
 const pick = f => fr.filter(r => matchRow(r, f, id => circles[id] || [])).map(r => r.gift.id).join();
+ok('filter: 出欠 (v3)', pick({ attendance: 'attended' }) === '1,2' && pick({ attendance: 'uninvited' }) === '3' && pick({ attendance: 'absent' }) === '');
 ok('filter: status', pick({ status: 'expected' }) === '2' && pick({ status: 'received' }) === '1,3');
 ok('filter: side', pick({ side: 'bride' }) === '1' && pick({ side: 'none' }) === '3');
 ok('filter: source', pick({ source: 'manual' }) === '3' && pick({ source: 'attendee' }) === '1,2');
@@ -238,3 +243,88 @@ ok('csv: status and amount', col('状態') === '受領済み' && col('区分') =
 ok('csv: returns', col('内祝い 品名') === 'カタログ' && col('内祝い 金額（商品代＋送料）') === 10500 && col('内祝い 明細').includes('予定'));
 const l4 = csvRow(row(gift(), [person('a', 'A', 0)]));
 ok('csv: expected row → 仮 and expected value', l4[CSV_COLS.indexOf('状態')] === '仮' && l4[CSV_COLS.indexOf('金額（円）')] === 30000 && l4[CSV_COLS.indexOf('受領日時')] === '');
+
+/* ================= v3 1. 並び順：同行者は本人の直後 ================= */
+/* 組 X（新婦側・本人 WATANABE＋同行2人）、組 Y（新郎側・本人 ABE＋同行1人）、追加の行（名前 KATO） */
+const gx0 = row(gift({ id: 'x0', side: 'bride', expected_jpy: 30000 }), [person('x0p', '渡辺 一', 0, { latin: 'WATANABE HAJIME', replyId: 'RX' })]);
+const gx1 = row(gift({ id: 'x1', side: 'bride', expected_jpy: 0 }), [person('x1p', '渡辺 二', 1, { latin: 'WATANABE JIRO', replyId: 'RX' })]);
+const gx2 = row(gift({ id: 'x2', side: 'bride', expected_jpy: 0 }), [person('x2p', '渡辺 三', 2, { latin: 'AAA', replyId: 'RX' })]);   // 同行者の名前が先でも本人の後
+const gy0 = row(gift({ id: 'y0', side: 'groom', expected_jpy: 10000 }), [person('y0p', '阿部 一', 0, { latin: 'ABE ICHI', replyId: 'RY' })]);
+const gy1 = row(gift({ id: 'y1', side: 'groom', expected_jpy: 99999 }), [person('y1p', '阿部 二', 1, { latin: 'ABE NI', replyId: 'RY' })]);   // 同行者の金額が大きくても本人の値で並ぶ
+const gm = row(gift({ id: 'm', side: null, source: 'manual', attendance: 'uninvited', status: 'received', amount_jpy: 50000, received_at: '2026-09-27T00:00:00Z' }), [{ id: 'mk', kind: 'name', name: '加藤 翔', latin: 'KATO SHO' }]);
+const mixed = [gx2, gm, gy1, gx1, gy0, gx0];
+const ids = k => sortRows(mixed, k).map(r => r.gift.id).join(',');
+ok('v3 group: name → ABE組, KATO, WATANABE組 (companions right after, idx order)', ids('name') === 'y0,y1,m,x0,x1,x2');
+ok('v3 group: side → 新郎組, 新婦組, 未設定', ids('side') === 'y0,y1,x0,x1,x2,m');
+ok('v3 group: amount uses the 本人 value (group intact)', ids('amount') === 'm,x0,x1,x2,y0,y1');
+ok('v3 group: received → received first, groups intact', ids('received') === 'm,y0,y1,x0,x1,x2');
+ok('v3 group: companion rows flagged, 本人 / manual not', isCompanionRow(gx1) && isCompanionRow(gy1) && !isCompanionRow(gx0) && !isCompanionRow(gm));
+/* 連名は、まとめた中の先頭の贈り主の位置に1行 */
+const gxm = row(gift({ id: 'xm', side: 'bride', expected_jpy: 30000 }), [person('x0p', '渡辺 一', 0, { latin: 'WATANABE HAJIME', replyId: 'RX' }), person('x2p', '渡辺 三', 2, { replyId: 'RX' })]);
+ok('v3 group: merged row sits at its first giver (本人) with remaining companion after', sortRows([gx1, gm, gxm], 'name').map(r => r.gift.id).join() === 'm,xm,x1'
+   && groupKey(gxm) === groupKey(gx1) && !isCompanionRow(gxm));
+/* 絞り込みで本人が隠れても、同行者は組の中で並ぶ */
+ok('v3 group: filtered-out 本人 → companions still ordered by idx', sortRows([gx2, gx1], 'name').map(r => r.gift.id).join() === 'x1,x2');
+
+/* ================= v3 2. 出欠・3. 内祝いの要否 ================= */
+ok('v3 attendance: manual with guest → absent, names only → uninvited', manualAttendance(['G3']) === 'absent' && manualAttendance([]) === 'uninvited');
+ok('v3 policy default: attended → 引出物お渡し済, others → 必要', defaultReturnPolicy('attended') === 'hikidemono'
+   && defaultReturnPolicy('absent') === 'needed' && defaultReturnPolicy('uninvited') === 'needed');
+{
+  const d = { replies, people: people.map(p => ({ ...p })), gifts: [], givers: [] };
+  const pl = plan(d);
+  ok('v3 sync: attendee gifts are attended / hikidemono', pl.create.length && pl.create.every(c => c.attendance === 'attended' && c.return_policy === 'hikidemono'));
+}
+const upv3 = unmergePlan(row(gift({ id: 'U' }), [person('ua', 'A', 0), { id: 'ug', kind: 'guest', name: 'G', guestId: 'G3' }, { id: 'un', kind: 'name', name: 'N' }]), 30000);
+ok('v3 unmerge: attendance / policy per part', upv3.parts.map(p => `${p.attendance}:${p.return_policy}`).join() === 'attended:hikidemono,absent:needed,uninvited:needed');
+/* 出席（引出物お渡し済）は受領済みでも未手配に数えない。必要の行だけ数える */
+const tRows = [
+  row(gift({ id: 't1', status: 'received', amount_jpy: 30000, return_policy: 'hikidemono' })),
+  row(gift({ id: 't2', status: 'received', amount_jpy: 30000, return_policy: 'not_needed' })),
+  row(gift({ id: 't3', status: 'received', amount_jpy: 30000, return_policy: 'needed', attendance: 'absent', source: 'manual' })),
+];
+ok('v3 todo: only 必要 rows are counted', summarize(tRows).todo === 1);
+ok('v3 state labels: 引出物済 / 不要 / 未手配', tRows.map(returnState).join() === 'hikidemono,none,todo');
+
+/* ================= v3 3. お渡しした引出物・引菓子 ================= */
+const hrow = row(gift({ id: 'h' }), [], [], );
+hrow.hiki = [
+  { id: 'h1', category: '引出物', name: 'カタログギフト', price_jpy: 5500, qty: 1 },
+  { id: 'h2', category: '引菓子', name: 'バウムクーヘン', price_jpy: 1620, qty: 2 },
+  { id: 'h3', category: 'その他', name: '削除済み', price_jpy: 9999, qty: 1, deleted_at: 'x' },
+];
+ok('v3 hiki: total = Σ price × qty (deleted excluded)', hikiTotal(hrow) === 5500 + 3240 && liveHiki(hrow).length === 2);
+ok('v3 hiki: names for CSV', hikiNames(hrow) === 'カタログギフト / バウムクーヘン×2');
+ok('v3 hiki: not in the budget link (gift total unchanged)', budgetLink([hrow.gift], []).giftTotal === 30000);
+const opts = checkItemOptions([
+  { id: 'i3', category: '引菓子', type_no: 1, sort: 30, brand: 'B', name: 'バウム', variant: null, unit_price: 1620 },
+  { id: 'i2', category: '引出物', type_no: 8, sort: 9, brand: 'A', name: 'タオル', variant: 'ピンク', unit_price: 3300 },
+  { id: 'i1', category: '引出物', type_no: 8, sort: 8, brand: 'A', name: 'タオル', variant: 'ブルー', unit_price: 3300 },
+  { id: 'i4', category: '引出物', type_no: 2, sort: 2, brand: null, name: 'カタログ', variant: '内訳メモ', unit_price: 5500.4 },
+]);
+ok('v3 check items: sorted 引出物 → 引菓子, type_no, sort', opts.map(o => o.id).join() === 'i4,i1,i2,i3');
+ok('v3 check items: variant shown only when the same type_no has several rows', opts[1].name === 'A タオル（ブルー）' && opts[2].name === 'A タオル（ピンク）'
+   && opts[0].name === 'カタログ' && opts[3].name === 'B バウム');
+ok('v3 check items: category / unit price auto-fill', opts[0].category === '引出物' && opts[0].price === 5500 && opts[3].category === '引菓子' && opts[1].label.includes('No.8'));
+
+/* ================= v3 4. 品物の相当額 ================= */
+const goodsRows = [
+  row(gift({ id: 'q1', status: 'received', amount_jpy: 30000, goods_value_jpy: 10000 })),      // 現金＋品物
+  row(gift({ id: 'q2', kind: 'goods', status: 'received', amount_jpy: null, goods_value_jpy: 20000 })),
+  row(gift({ id: 'q3', expected_jpy: 30000 })),
+];
+const gs3 = summarize(goodsRows);
+ok('v3 goods: not in ご祝儀 total / breakdown', gs3.total === 60000 && gs3.received.total === 30000);
+ok('v3 goods: separate card total & count', gs3.goods.total === 30000 && gs3.goods.count === 2);
+ok('v3 goods: not in the budget income', budgetLink(goodsRows.map(r => r.gift), []).giftTotal === 60000);
+ok('v3 goods: guide uses ご祝儀 + 相当額', JSON.stringify(returnGuide(goodsRows[0].gift)) === JSON.stringify({ low: 13333, high: 20000 })
+   && JSON.stringify(returnGuide(goodsRows[1].gift)) === JSON.stringify({ low: 6667, high: 10000 }) && goodsValue(goodsRows[2].gift) === 0);
+
+/* ================= v3 5. CSV ================= */
+hrow.gift.goods_value_jpy = 8000; hrow.gift.return_policy = 'hikidemono';
+const l5 = csvRow(hrow), c5 = k => l5[CSV_COLS.indexOf(k)];
+ok('v3 csv: column count', l5.length === CSV_COLS.length);
+ok('v3 csv: 出欠 / 内祝いの要否 / 引出物 / 相当額', c5('出欠') === '出席' && c5('内祝いの要否') === '不要（引出物お渡し済）'
+   && c5('お渡しした引出物・引菓子') === 'カタログギフト / バウムクーヘン×2' && c5('お渡しした引出物・引菓子の合計（円）') === 8740
+   && c5('品物の相当額（円）') === 8000 && c5('金額（円）') === 30000);
+ok('v3 csv: blanks when none', l4[CSV_COLS.indexOf('お渡しした引出物・引菓子')] === '' && l4[CSV_COLS.indexOf('品物の相当額（円）')] === '');

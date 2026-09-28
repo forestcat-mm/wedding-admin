@@ -1,10 +1,13 @@
 /* ご祝儀・内祝いの計算（DOM に依存しない純粋な関数。tests/gifts-logic.test.mjs で検証）
-   仕様：00_spec/10_gifts-v2.md（v2：出席者の仮登録と受領確認）、内祝いは 00_spec/09_gifts.md（v1）
-   一覧の1行は { gift, givers, returns } の形で扱う。
-     gift    = gifts の1行（status：expected＝仮／received＝受領済み、source：attendee＝出席者／manual＝追加）
+   仕様：00_spec/11_gifts-v3.md（v3：並び順・出欠・引出物記録・品物の相当額）、10_gifts-v2.md（v2：仮登録と受領確認）、
+         内祝いは 00_spec/09_gifts.md（v1）
+   一覧の1行は { gift, givers, returns, hiki } の形で扱う。
+     gift    = gifts の1行（status：expected＝仮／received＝受領済み、source：attendee＝出席者／manual＝追加、
+               attendance：attended／absent／uninvited、return_policy：needed／hikidemono／not_needed、goods_value_jpy：品物の相当額）
      givers  = 贈り主の表示用（giverView）。{ id, kind, name, latin, idx, replyId, guestId, attending, side }
                kind：person＝出席者（reply_person_id）／guest＝招待客（guest_id）／name＝名前だけ／orphan＝紐付け先が消えた
-     returns = その gift の gift_returns（削除済みを含んでよい。ここで除く） */
+     returns = その gift の gift_returns（削除済みを含んでよい。ここで除く）
+     hiki    = その gift の gift_hikidemono（お渡しした引出物・引菓子。削除済みを含んでよい。ここで除く） */
 
 export const KINDS = [['cash', '現金'], ['goods', '品物'], ['transfer', '振込'], ['e_money', '電子送金'], ['other', 'その他']];
 export const ROUTES = [['reception', '受付'], ['hand', '当日手渡し'], ['mail', '郵送'], ['later', '後日'], ['other', 'その他']];
@@ -18,25 +21,63 @@ export const RET_STATUS_LABEL = Object.fromEntries(RET_STATUSES);
 export const STATUS_LABEL = Object.fromEntries(STATUSES);
 export const SOURCE_LABEL = Object.fromEntries(SOURCES);
 export const DEFAULT_GIFT_JPY = 30000;          // app_settings.gift_default_jpy が無いときの既定
+/* v3：披露宴の出欠と内祝いの要否 */
+export const ATTENDANCES = [['attended', '出席'], ['absent', '欠席'], ['uninvited', '招待なし']];
+export const ATTENDANCE_LABEL = Object.fromEntries(ATTENDANCES);
+export const RETURN_POLICIES = [['needed', '必要'], ['hikidemono', '不要（引出物お渡し済）'], ['not_needed', '不要（その他）']];
+export const RETURN_POLICY_LABEL = Object.fromEntries(RETURN_POLICIES);
+/** 内祝いの要否の初期値：出席は「不要（引出物お渡し済）」、欠席・招待なしは「必要」 */
+export const defaultReturnPolicy = attendance => attendance === 'attended' ? 'hikidemono' : 'needed';
+/** 手動登録の出欠：欠席の招待客をゲスト一覧から選んだら absent、名前の直接入力だけなら uninvited */
+export const manualAttendance = guestIds => (guestIds && guestIds.length) ? 'absent' : 'uninvited';
+export const HIKI_CATEGORIES = ['引出物', '引菓子', 'その他'];
 
-/* 内祝い状況。pending＝受領前／none＝不要／todo＝未手配／partial＝手配中（一部）／shipped＝発送済／delivered＝到着済 */
-export const RETURN_STATES = [['pending', '—（受領前）'], ['none', '不要'], ['todo', '未手配'], ['partial', '手配中（一部）'], ['shipped', '発送済'], ['delivered', '到着済']];
+/* 内祝い状況。hikidemono＝引出物済／none＝不要／pending＝受領前／todo＝未手配／partial＝手配中（一部）／shipped＝発送済／delivered＝到着済 */
+export const RETURN_STATES = [['hikidemono', '引出物済'], ['none', '不要'], ['pending', '—（受領前）'], ['todo', '未手配'], ['partial', '手配中（一部）'], ['shipped', '発送済'], ['delivered', '到着済']];
 export const RETURN_STATE_LABEL = Object.fromEntries(RETURN_STATES);
 
 export const liveReturns = row => (row.returns || []).filter(r => !r.deleted_at);
 export const retAmount = r => (Number(r.price_jpy) || 0) + (Number(r.shipping_jpy) || 0);
 const isReceived = g => g.status === 'received';
-/** 1件の金額。受領済みなら amount_jpy（実績）、仮なら expected_jpy（見込み） */
+/** 1件の金額。受領済みなら amount_jpy（実績）、仮なら expected_jpy（見込み）。品物の相当額は含めない */
 export const giftValue = g => isReceived(g) ? (Number(g.amount_jpy) || 0) : (Number(g.expected_jpy) || 0);
+/** 品物の相当額（ご祝儀の合計・予算には入れない） */
+export const goodsValue = g => Number(g.goods_value_jpy) || 0;
 const sideOk = s => (s === 'groom' || s === 'bride') ? s : null;
 
-/** 内祝い状況。仮（受領前）は内祝いの登録が無ければ pending（未手配には数えない）。
-    要否が「不要」→ none。内祝いが無い、またはすべて「予定」→ todo。
-    すべて到着済 → delivered、すべて発送済か到着済 → shipped、それ以外 → partial */
+/* ---- お渡しした引出物・引菓子（予算には連動させない） ---- */
+export const liveHiki = row => (row.hiki || []).filter(h => !h.deleted_at);
+export const hikiAmount = h => (Number(h.price_jpy) || 0) * (Number(h.qty) || 0);
+export const hikiTotal = row => liveHiki(row).reduce((s, h) => s + hikiAmount(h), 0);
+/** CSV・一覧用の品名のまとめ（2個以上は「×n」） */
+export const hikiNames = row => liveHiki(row).map(h => `${h.name}${Number(h.qty) > 1 ? `×${h.qty}` : ''}`).join(' / ');
+const HIKI_RANK = { 引出物: 0, 引菓子: 1 };
+/** 引出物・引菓子リスト（gift_check_items）の選択肢。区分 → 種類No. → sort の順。
+    同じ区分・種類No.に複数行（色違いなど）があるものは、バリエーション・内訳も品名とラベルに入れる */
+export function checkItemOptions(items) {
+  const count = new Map();
+  for (const it of items) { const k = `${it.category}:${it.type_no}`; count.set(k, (count.get(k) || 0) + 1); }
+  return [...items].sort((a, b) => (HIKI_RANK[a.category] ?? 9) - (HIKI_RANK[b.category] ?? 9)
+      || (a.type_no ?? 0) - (b.type_no ?? 0) || (a.sort ?? 0) - (b.sort ?? 0))
+    .map(it => {
+      const multi = count.get(`${it.category}:${it.type_no}`) > 1 && it.variant;
+      const name = `${it.brand ? it.brand + ' ' : ''}${it.name}${multi ? `（${it.variant}）` : ''}`;
+      const category = HIKI_CATEGORIES.includes(it.category) ? it.category : 'その他';
+      const price = Math.round(Number(it.unit_price) || 0);
+      return { id: it.id, category, name, price,
+               label: `${category}${it.type_no != null ? ` No.${it.type_no}` : ''}　${name}　¥${price.toLocaleString('ja-JP')}` };
+    });
+}
+
+/** 内祝い状況。要否が「不要（引出物お渡し済）」→ hikidemono、「不要（その他）」→ none。
+    必要の行：仮（受領前）で内祝いの登録が無ければ pending（未手配には数えない）。
+    内祝いが無い、またはすべて「予定」→ todo。すべて到着済 → delivered、すべて発送済か到着済 → shipped、それ以外 → partial */
 export function returnState(row) {
   const rs = liveReturns(row);
+  const policy = row.gift.return_policy || 'needed';
+  if (policy === 'hikidemono') return 'hikidemono';
+  if (policy === 'not_needed') return 'none';
   if (!isReceived(row.gift) && !rs.length) return 'pending';
-  if (!row.gift.return_needed) return 'none';
   if (!rs.length || rs.every(r => r.status === 'planned')) return 'todo';
   if (rs.every(r => r.status === 'delivered')) return 'delivered';
   if (rs.every(r => r.status === 'shipped' || r.status === 'delivered')) return 'shipped';
@@ -74,7 +115,8 @@ export function planSync({ replies, people, guests, gifts, givers, defaultJpy })
     if (!gv) {
       const g = guestById.get(r.matched_guest_id);
       create.push({ personId: p.id, replyId: r.id, idx: p.idx, side: sideOk(g?.side) || sideOk(r.side),
-                    expected: p.idx === 0 ? (Number(defaultJpy) || 0) : 0 });
+                    expected: p.idx === 0 ? (Number(defaultJpy) || 0) : 0,
+                    attendance: 'attended', return_policy: defaultReturnPolicy('attended') });
       continue;
     }
     const gift = giftById.get(gv.gift_id);
@@ -122,9 +164,9 @@ export function parseYen(s) {
   if (t === '') return null;
   return /^\d{1,9}$/.test(t) ? Number(t) : undefined;
 }
-/** 内祝いの参考額（受領額の 1/3〜1/2）。金額が無ければ null */
+/** 内祝いの参考額（ご祝儀の金額＋品物の相当額 の 1/3〜1/2）。金額が無ければ null */
 export function returnGuide(gift) {
-  const v = giftValue(gift);
+  const v = giftValue(gift) + goodsValue(gift);
   if (!v) return null;
   return { low: Math.round(v / 3), high: Math.round(v / 2) };
 }
@@ -143,10 +185,11 @@ export function summarize(rows) {
   const live = rows.filter(r => !r.gift.deleted_at);
   const z = () => ({ count: 0, total: 0 });
   const s = { count: live.length, total: 0, received: z(), expected: z(), groom: z(), bride: z(), none: z(),
-              returnCost: 0, returnPlanned: 0, todo: 0 };
+              goods: z(), returnCost: 0, returnPlanned: 0, todo: 0 };
   for (const row of live) {
     const v = giftValue(row.gift);
     s.total += v;
+    if (goodsValue(row.gift) > 0) { s.goods.count++; s.goods.total += goodsValue(row.gift); }   /* 合計には入れない */
     const st = isReceived(row.gift) ? s.received : s.expected;
     st.count++; st.total += v;
     const sd = s[sideOk(row.gift.side) || 'none'];
@@ -184,17 +227,22 @@ export function mergePlan(rows) {
   return { keep, others, expected: rows.reduce((s, r) => s + (Number(r.gift.expected_jpy) || 0), 0) };
 }
 /** 連名を解除する計画。贈り主ごとに1件へ。先頭の贈り主は元の gift に残る。
-    仮の金額は本人（出席者の idx 0）なら既定値、それ以外は 0 */
+    仮の金額は本人（出席者の idx 0）なら既定値、それ以外は 0。
+    新しく分かれる行の出欠は、出席者なら attended、招待客なら absent、名前だけなら uninvited（内祝いの要否はその初期値） */
 export function unmergePlan(row, defaultJpy) {
   if ((row.givers || []).length < 2) return { error: '連名ではありません' };
   if (isReceived(row.gift)) return { error: '受領済みの連名は解除できません。先に受領を取り消してください' };
   return {
-    parts: row.givers.map((x, i) => ({
-      giverId: x.id, keep: i === 0,
-      expected: x.kind === 'person' && x.idx === 0 ? (Number(defaultJpy) || 0) : 0,
-      source: x.kind === 'person' ? 'attendee' : 'manual',
-      side: sideOk(x.side) || sideOk(row.gift.side),
-    })),
+    parts: row.givers.map((x, i) => {
+      const attendance = x.kind === 'person' ? 'attended' : x.kind === 'guest' ? 'absent' : 'uninvited';
+      return {
+        giverId: x.id, keep: i === 0,
+        expected: x.kind === 'person' && x.idx === 0 ? (Number(defaultJpy) || 0) : 0,
+        source: x.kind === 'person' ? 'attendee' : 'manual',
+        side: sideOk(x.side) || sideOk(row.gift.side),
+        attendance, return_policy: defaultReturnPolicy(attendance),
+      };
+    }),
   };
 }
 /** 「同行者とまとめる」の相手：同じ回答の同行者が1人で入っている、仮のご祝儀 */
@@ -214,10 +262,11 @@ export const defaultTargets = (rows, newDefault) => rows.filter(r => !r.gift.del
 
 /* ---- 絞り込み・並び替え ---- */
 const norm = s => String(s ?? '').replace(/[\s　]/g, '').toLowerCase();
-/** f = { q, status, side, circle, source, state }。circlesOf(guestId) は友人圏 id の配列 */
+/** f = { q, status, side, circle, source, attendance, state }。circlesOf(guestId) は友人圏 id の配列 */
 export function matchRow(row, f, circlesOf = () => []) {
   const g = row.gift;
   if (f.status && g.status !== f.status) return false;
+  if (f.attendance && g.attendance !== f.attendance) return false;
   if (f.side && (f.side === 'none' ? !!sideOk(g.side) : g.side !== f.side)) return false;
   if (f.source && g.source !== f.source) return false;
   if (f.state && returnState(row) !== f.state) return false;
@@ -233,9 +282,17 @@ export function matchRow(row, f, circlesOf = () => []) {
   return true;
 }
 const SIDE_RANK = { groom: 0, bride: 1 };
-/** 並び替え：name（名前）／side（新郎側→新婦側→未設定）／amount（金額の多い順）／received（受領日時の新しい順。仮は後ろ） */
+/* v3 1.：一覧は「組」（同じ回答の本人＋同行者）を単位に並べる。
+   行の位置は先頭の贈り主で決まる（連名はまとめた中の先頭の贈り主の位置に1行）。出席者でない行（追加）は1行で1組 */
+const anchorOf = row => (row.givers || [])[0] || null;
+const anchorIdx = row => { const a = anchorOf(row); return a && a.kind === 'person' ? (a.idx ?? 0) : 0; };
+export const groupKey = row => { const a = anchorOf(row); return a && a.kind === 'person' && a.replyId ? `r:${a.replyId}` : `g:${row.gift.id}`; };
+/** 同行の行（先頭の贈り主が同行者 idx > 0）。一覧で字下げし「同行」ラベルを付ける */
+export const isCompanionRow = row => anchorIdx(row) > 0;
+/** 並び替え：name（名前）／side（新郎側→新婦側→未設定）／amount（金額の多い順）／received（受領日時の新しい順。仮は後ろ）。
+    組どうしは組の先頭（本人）の値で並べ、組の中は本人 → 同行者（idx 順）。並び替えても組は崩れない */
 export function sortRows(rows, key) {
-  const nameKey = row => { const x = (row.givers || [])[0]; return (x && (x.latin || x.name)) || ''; };
+  const nameKey = row => { const x = anchorOf(row); return (x && (x.latin || x.name)) || ''; };
   const byName = (a, b) => nameKey(a).localeCompare(nameKey(b), 'ja', { sensitivity: 'base' })
     || String(a.gift.id).localeCompare(String(b.gift.id));
   const cmp = {
@@ -243,12 +300,22 @@ export function sortRows(rows, key) {
     amount: (a, b) => giftValue(b.gift) - giftValue(a.gift) || byName(a, b),
     received: (a, b) => String(b.gift.received_at || '').localeCompare(String(a.gift.received_at || '')) || byName(a, b),
   }[key] || byName;
-  return [...rows].sort(cmp);
+  const groups = new Map();
+  for (const r of rows) {
+    const k = groupKey(r);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(r);
+  }
+  const lists = [...groups.values()].map(list =>
+    list.sort((a, b) => anchorIdx(a) - anchorIdx(b) || String(a.gift.id).localeCompare(String(b.gift.id))));
+  lists.sort((a, b) => cmp(a[0], b[0]));
+  return lists.flat();
 }
 
 /* ---- CSV ---- */
-export const CSV_COLS = ['贈り主', '贈り主（ローマ字）', '人数', '表書きの名義', 'サイド', '区分', '状態', '金額（円）', '通貨', '外貨の金額',
-  '受領日時', '種類', '経路', '内祝い要否', '内祝い状況', '内祝い 品名', '内祝い 金額（商品代＋送料）', '内祝い 明細', 'お礼状', 'メモ'];
+export const CSV_COLS = ['贈り主', '贈り主（ローマ字）', '人数', '表書きの名義', 'サイド', '出欠', '区分', '状態', '金額（円）', '品物の相当額（円）',
+  '通貨', '外貨の金額', '受領日時', '種類', '経路', '内祝いの要否', '内祝い状況', '内祝い 品名', '内祝い 金額（商品代＋送料）', '内祝い 明細',
+  'お渡しした引出物・引菓子', 'お渡しした引出物・引菓子の合計（円）', 'お礼状', 'メモ'];
 const SIDE_LABEL = { groom: '新郎側', bride: '新婦側' };
 const pad2 = n => String(n).padStart(2, '0');
 function fmtDT(iso) {
@@ -260,16 +327,19 @@ function fmtDT(iso) {
 export function csvRow(row) {
   const g = row.gift, rs = liveReturns(row);
   const foreign = g.currency && g.currency !== 'JPY';
+  const hk = liveHiki(row);
   return [
     giverNames(row).join('・'), (row.givers || []).map(x => (x.latin || '').toUpperCase()).filter(Boolean).join('・'),
     (row.givers || []).length, g.envelope_name || '', SIDE_LABEL[g.side] || '',
-    SOURCE_LABEL[g.source] || '', STATUS_LABEL[g.status] || '', giftValue(g),
+    ATTENDANCE_LABEL[g.attendance] || '', SOURCE_LABEL[g.source] || '', STATUS_LABEL[g.status] || '', giftValue(g),
+    goodsValue(g) || '',
     g.currency || '', foreign && g.amount != null ? Number(g.amount) : '',
     fmtDT(g.received_at), KIND_LABEL[g.kind] || g.kind || '', ROUTE_LABEL[g.route] || g.route || '',
-    g.return_needed ? '必要' : '不要', RETURN_STATE_LABEL[returnState(row)],
+    RETURN_POLICY_LABEL[g.return_policy || 'needed'], RETURN_STATE_LABEL[returnState(row)],
     rs.map(r => r.item_name).join(' / '),
     rs.length ? rs.reduce((s, r) => s + retAmount(r), 0) : '',
     rs.map(r => `${r.item_name}${r.shop ? `（${r.shop}）` : ''} 商品代${Number(r.price_jpy) || 0}円 送料${Number(r.shipping_jpy) || 0}円 ${RET_STATUS_LABEL[r.status] || r.status}`).join(' / '),
+    hikiNames(row), hk.length ? hikiTotal(row) : '',
     g.thank_you_sent ? '送付済' : '未送付', g.memo || '',
   ];
 }
