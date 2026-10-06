@@ -10,3 +10,6 @@ work/
 .dev.vars
 # Supabase CLI のリンク情報
 supabase/.temp/
+
+# Supabase から抽出したスキーマ（Git に載せない）
+01_source/db/
