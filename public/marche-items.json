@@ -1,0 +1,223 @@
+{
+ "source": "wedding-invitation public/guide/content/guide.ja.json の marche（2026-10-07 時点のコピー）",
+ "photoBase": "https://wedding.forest-mm.com/guide/",
+ "items": {
+  "g01": {
+   "id": "g01",
+   "section": "hikidemono",
+   "brand": "リーガロイヤルホテル",
+   "name": "オヴァチュア レッドワインペア",
+   "photo": "photos/marche/g01.jpg"
+  },
+  "g02": {
+   "id": "g02",
+   "section": "hikidemono",
+   "brand": "今治謹製",
+   "name": "極上タオル フェイスタオル2P〈木箱入〉",
+   "photo": "photos/marche/g02.jpg"
+  },
+  "g03": {
+   "id": "g03",
+   "section": "hikidemono",
+   "brand": "ReFa",
+   "name": "HEART BRUSH",
+   "photo": "photos/marche/g03.jpg"
+  },
+  "g04": {
+   "id": "g04",
+   "section": "hikidemono",
+   "brand": "ReFa",
+   "name": "AILE BRUSH",
+   "photo": "photos/marche/g04.jpg"
+  },
+  "g05": {
+   "id": "g05",
+   "section": "hikidemono",
+   "brand": "ReFa",
+   "name": "LOCK OIL BLOOM 120mL",
+   "photo": "photos/marche/g05.jpg"
+  },
+  "g06": {
+   "id": "g06",
+   "section": "hikidemono",
+   "brand": "CLAYD",
+   "name": "ワンタイムギフト",
+   "photo": "photos/marche/g06.jpg"
+  },
+  "g07": {
+   "id": "g07",
+   "section": "hikidemono",
+   "brand": "",
+   "name": "ホットアイマスク にゃんづくしギフト（21枚入り）",
+   "photo": "photos/marche/g07.jpg"
+  },
+  "g08": {
+   "id": "g08",
+   "section": "hikidemono",
+   "brand": "煎茶堂東京",
+   "name": "お茶2缶ギフト",
+   "photo": "photos/marche/g08.jpg"
+  },
+  "g09": {
+   "id": "g09",
+   "section": "hikidemono",
+   "brand": "GIN NO MORI",
+   "name": "プティボワ150",
+   "photo": "photos/marche/g09.jpg"
+  },
+  "g10": {
+   "id": "g10",
+   "section": "hikidemono",
+   "brand": "L'ABEILLE",
+   "name": "アカシアはちみつ＋はちみつペースト 栗 2本ギフト",
+   "photo": "photos/marche/g10.jpg"
+  },
+  "g11": {
+   "id": "g11",
+   "section": "hikidemono",
+   "brand": "MOFT",
+   "name": "8-in-1 多機能スタンド MagSafe対応",
+   "photo": "photos/marche/g11.jpg"
+  },
+  "g12": {
+   "id": "g12",
+   "section": "hikidemono",
+   "brand": "shu uemura",
+   "name": "クレンジングオイル",
+   "photo": "photos/marche/g12.jpg"
+  },
+  "g13": {
+   "id": "g13",
+   "section": "hikidemono",
+   "brand": "Dior",
+   "name": "アディクト リップ マキシマイザー",
+   "photo": "photos/marche/g13.jpg"
+  },
+  "g14": {
+   "id": "g14",
+   "section": "hikidemono",
+   "brand": "Anker",
+   "name": "トラベルアダプタ（5-in-1）",
+   "photo": "photos/marche/g14.jpg"
+  },
+  "g15": {
+   "id": "g15",
+   "section": "hikidemono",
+   "brand": "TENTIAL",
+   "name": "アイマスク",
+   "photo": "photos/marche/g15.jpg"
+  },
+  "g16": {
+   "id": "g16",
+   "section": "hikidemono",
+   "brand": "ニッカ",
+   "name": "フロム・ザ・バレル",
+   "photo": "photos/marche/g16.jpg"
+  },
+  "g17": {
+   "id": "g17",
+   "section": "hikidemono",
+   "brand": "SHIRO",
+   "name": "CHERISH MY LOVE ハンド美容液",
+   "photo": "photos/marche/g17.jpg"
+  },
+  "g18": {
+   "id": "g18",
+   "section": "hikidemono",
+   "brand": "SHIRO",
+   "name": "PEONY BLISS ボディミスト",
+   "photo": "photos/marche/g18.jpg"
+  },
+  "g19": {
+   "id": "g19",
+   "section": "hikidemono",
+   "brand": "SHIRO",
+   "name": "ホワイトリリー ファブリックソフナー",
+   "photo": "photos/marche/g19.jpg"
+  },
+  "g20": {
+   "id": "g20",
+   "section": "hikidemono",
+   "brand": "Santa Maria Novella",
+   "name": "タボレッタ ローザ ノヴェッラ 2枚入り",
+   "photo": "photos/marche/g20.jpg"
+  },
+  "s01": {
+   "id": "s01",
+   "section": "hikigashi",
+   "brand": "リーガロイヤルホテル",
+   "name": "濃厚ガトーショコラ",
+   "photo": "photos/marche/s01.jpg"
+  },
+  "s02": {
+   "id": "s02",
+   "section": "hikigashi",
+   "brand": "リーガロイヤルホテル",
+   "name": "はちみつマドレーヌ",
+   "photo": "photos/marche/s02.jpg"
+  },
+  "s03": {
+   "id": "s03",
+   "section": "hikigashi",
+   "brand": "リーガロイヤルホテル",
+   "name": "ヘーゼルナッツキャラメルタルト",
+   "photo": "photos/marche/s03.jpg"
+  },
+  "s04": {
+   "id": "s04",
+   "section": "hikigashi",
+   "brand": "リーガロイヤルホテル",
+   "name": "チーズケーキ",
+   "photo": "photos/marche/s04.jpg"
+  },
+  "s05": {
+   "id": "s05",
+   "section": "hikigashi",
+   "brand": "PISTACHIO TOKYO",
+   "name": "ピスタチオショコラ",
+   "photo": "photos/marche/s05.jpg"
+  },
+  "s06": {
+   "id": "s06",
+   "section": "hikigashi",
+   "brand": "益や",
+   "name": "ほろ酔い専用セット",
+   "photo": "photos/marche/s06.jpg"
+  },
+  "s07": {
+   "id": "s07",
+   "section": "hikigashi",
+   "brand": "Mr. CHEESECAKE",
+   "name": "Gift Bag",
+   "photo": "photos/marche/s07.jpg"
+  },
+  "s08": {
+   "id": "s08",
+   "section": "hikigashi",
+   "brand": "PARIS BUTTER CHOCOLAT",
+   "name": "パリバターショコラ",
+   "photo": "photos/marche/s08.jpg"
+  },
+  "s09": {
+   "id": "s09",
+   "section": "hikigashi",
+   "brand": "JEAN-PAUL HÉVIN",
+   "name": "キト",
+   "photo": "photos/marche/s09.jpg"
+  },
+  "s11": {
+   "id": "s11",
+   "section": "hikigashi",
+   "brand": "PRESS BUTTER SAND",
+   "name": "バターサンド〈蜜芋〉",
+   "photo": "photos/marche/s11.jpg"
+  },
+  "s12": {
+   "id": "s12",
+   "section": "hikigashi",
+   "brand": "PRESS BUTTER SAND",
+   "name": "バターサンド〈栗〉",
+   "photo": "photos/marche/s12.jpg"
+  }
+ }
+}

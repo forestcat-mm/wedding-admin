@@ -170,3 +170,81 @@ for (const path of ['/api/reception/gifts', '/api/gifts']) {
   r = await req(path, { headers: { cookie } });
   ok(`09_gifts: ${path} → 404`, r.status === 404);
 }
+
+// 06_modes: /api/media/*（R2）。管理者の Bearer だけ。受付トークンの Cookie・部外者は 401
+const store = new Map(), uploads = new Map();
+const bytes = s => new TextEncoder().encode(s);
+const readAll = async b => b instanceof ArrayBuffer ? new Uint8Array(b) : new Uint8Array(await new Response(b).arrayBuffer());
+const objOf = (key, data, meta) => ({ key, size: data.length, httpEtag: '"e"', httpMetadata: meta || {},
+  writeHttpMetadata: h => { if (meta?.contentType) h.set('content-type', meta.contentType); } });
+env.MEDIA = {
+  async createMultipartUpload(key, o) { const id = 'up' + uploads.size; uploads.set(id, { key, parts: new Map(), meta: o?.httpMetadata }); return { key, uploadId: id }; },
+  resumeMultipartUpload(key, id) {
+    const u = uploads.get(id);
+    return {
+      async uploadPart(n, body) { u.parts.set(n, await readAll(body)); return { partNumber: n, etag: 'et' + n }; },
+      async complete(parts) {
+        const data = new Uint8Array(parts.reduce((s, p) => s + u.parts.get(p.partNumber).length, 0)); let o = 0;
+        for (const p of parts) { data.set(u.parts.get(p.partNumber), o); o += u.parts.get(p.partNumber).length; }
+        store.set(key, { data, meta: u.meta }); uploads.delete(id); return objOf(key, data, u.meta);
+      },
+      async abort() { uploads.delete(id); },
+    };
+  },
+  async put(key, buf, o) { store.set(key, { data: await readAll(buf), meta: o?.httpMetadata }); return objOf(key, store.get(key).data); },
+  async head(key) { const s = store.get(key); return s ? objOf(key, s.data, s.meta) : null; },
+  async get(key, o) {
+    const s = store.get(key); if (!s) return null;
+    const m = /bytes=(\d+)-(\d*)/.exec(o?.range?.get?.('range') || '');
+    const ob = objOf(key, s.data, s.meta);
+    if (m) {
+      const off = +m[1]; if (off >= s.data.length) throw new Error('range');
+      const end = m[2] ? Math.min(+m[2], s.data.length - 1) : s.data.length - 1;
+      return { ...ob, range: { offset: off, length: end - off + 1, suffix: undefined }, body: s.data.slice(off, end + 1) };
+    }
+    return { ...ob, body: s.data };
+  },
+  async delete(keys) { for (const k of [].concat(keys)) store.delete(k); },
+  async list({ prefix }) { return { objects: [...store.keys()].filter(k => k.startsWith(prefix)).map(key => ({ key })), truncated: false }; },
+};
+const adm = { authorization: 'Bearer good', 'content-type': 'application/json' };
+const post = (path, body, h = adm) => req(path, { method: 'POST', headers: h, body: JSON.stringify(body) });
+r = await post('/api/media/init', { key: 'movies/opening/720p.mp4', content_type: 'video/mp4' }, { cookie, 'content-type': 'application/json' });
+ok('06 media: reception cookie → 401', r.status === 401);
+r = await post('/api/media/init', { key: 'movies/opening/720p.mp4', content_type: 'video/mp4' }, { authorization: 'Bearer outsider' });
+ok('06 media: non-admin bearer → 401', r.status === 401);
+for (const [path, method] of [['/api/media/part?key=movies/a/720p.mp4&uploadId=x&partNumber=1', 'PUT'], ['/api/media/complete', 'POST'], ['/api/media/abort', 'POST'],
+                              ['/api/media/object?key=movies/a/poster.jpg', 'PUT'], ['/api/media/sign', 'POST'], ['/api/media/delete', 'POST']]) {
+  r = await req(path, { method, body: '{}' });
+  ok(`06 media: ${method} ${path.split('?')[0]} without auth → 401`, r.status === 401);
+}
+r = await post('/api/media/init', { key: '../secret.mp4', content_type: 'video/mp4' });
+ok('06 media: key outside movies/ → 400', r.status === 400);
+r = await post('/api/media/init', { key: 'movies/opening/720p.mp4', content_type: 'video/quicktime' });
+ok('06 media: non-mp4 → 400', r.status === 400);
+r = await post('/api/media/init', { key: 'movies/opening/720p.mp4', content_type: 'video/mp4' }); b = await r.json();
+const up = b.uploadId;
+for (const [n, s] of [[1, 'hello '], [2, 'world']]) {
+  r = await req(`/api/media/part?key=movies/opening/720p.mp4&uploadId=${up}&partNumber=${n}`, { method: 'PUT', headers: { authorization: 'Bearer good', 'content-length': String(s.length) }, body: bytes(s) });
+}
+r = await post('/api/media/complete', { key: 'movies/opening/720p.mp4', uploadId: up, parts: [{ partNumber: 1, etag: 'et1' }, { partNumber: 2, etag: 'et2' }] }); b = await r.json();
+ok('06 media: multipart → one object', b.ok && b.size === 11 && store.has('movies/opening/720p.mp4'));
+r = await req('/api/media/object?key=movies/opening/720p.mp4');
+ok('06 media: GET without sig → 403', r.status === 403);
+r = await post('/api/media/sign', { key: 'movies/opening/720p.mp4' }); b = await r.json();
+r = await req(b.url, { headers: { range: 'bytes=6-10' } });
+ok('06 media: signed GET with Range → 206', r.status === 206 && r.headers.get('content-range') === 'bytes 6-10/11' && await r.text() === 'world'
+   && r.headers.get('accept-ranges') === 'bytes' && r.headers.get('content-type') === 'video/mp4');
+r = await req(b.url.replace(/sig=[^&]+/, 'sig=AAAA'));
+ok('06 media: tampered sig → 403', r.status === 403);
+r = await req(b.url, { headers: { range: 'bytes=99-' } });
+ok('06 media: unsatisfiable range → 416', r.status === 416 && r.headers.get('content-range') === 'bytes */11');
+r = await req('/api/media/object?key=movies/opening/poster.jpg', { method: 'PUT', headers: { authorization: 'Bearer good', 'content-type': 'image/png' }, body: bytes('x') });
+ok('06 media: poster must be jpeg', r.status === 400);
+r = await req('/api/media/object?key=movies/opening/poster.jpg', { method: 'PUT', headers: { authorization: 'Bearer good', 'content-type': 'image/jpeg' }, body: bytes('jpg') });
+ok('06 media: poster saved', r.status === 200 && store.has('movies/opening/poster.jpg'));
+store.set('movies/profile/720p.mp4', { data: bytes('p') });
+r = await post('/api/media/delete', { prefix: 'movies/opening/' }); b = await r.json();
+ok('06 media: delete prefix removes only that movie', b.deleted === 2 && !store.has('movies/opening/720p.mp4') && store.has('movies/profile/720p.mp4'));
+r = await post('/api/media/delete', { prefix: 'movies/' });
+ok('06 media: delete prefix must be one movie', r.status === 400);

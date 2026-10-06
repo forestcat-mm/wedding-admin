@@ -36,6 +36,9 @@
     <button data-v="seating">配席</button>
     <button data-v="circles">友人圏・シェア</button>
     <button data-v="reception">受付トークン</button>
+    <button data-v="site">公開設定</button>
+    <button data-v="movies">Movies</button>
+    <button data-v="feedback">ギフト＆感想</button>
   </nav>
   <div class="me"><span id="me-mail"></span> ｜ <button class="btn link" id="logout">ログアウト</button></div>
 </div></header>
@@ -307,6 +310,70 @@
     <p class="note" style="margin:10px 0 0" id="gt-count"></p>
   </div>
 </section>
+
+<!-- ===== 公開設定（00_spec/06_modes_admin.md §3） ===== -->
+<section class="view" id="v-site">
+  <h2>公開設定</h2>
+  <p class="sub">ゲスト向けサイト（wedding.forest-mm.com）で、いつ・どのページを出すかを決めます。どのモードにも当たらない期間（最後のモードの終了後など）は、ゲスト向けのページがすべて 404 になります。</p>
+  <div class="panel" id="site-now"><p class="note">読み込み中…</p></div>
+  <div class="panel">
+    <div class="row" style="margin:0"><b>手動固定</b>
+      <select id="site-ovr"></select>
+      <input id="site-ovr-note" placeholder="メモ（例：本番確認のため）" style="width:220px">
+      <button class="btn s" id="site-ovr-save">保存</button>
+      <span id="site-ovr-badge"></span>
+      <span class="sp"></span><span class="note">固定中は期間に関係なくそのモードになります。「自動」で期間による判定に戻ります</span></div>
+  </div>
+  <div class="panel">
+    <div class="row"><b>モード一覧</b><span class="note">並び順＝優先順（期間が重なったら上の行が優先）。⠿ をドラッグで並べ替え。日時は日本時間</span>
+      <span class="sp"></span><span class="tag wait" id="site-dirty" hidden>未保存の変更あり</span>
+      <button class="btn o s" id="site-discard">変更を破棄</button>
+      <button class="btn o s" id="site-add">＋ モードを追加</button>
+      <button class="btn s" id="site-save">保存</button></div>
+    <div id="site-warn"></div>
+    <div class="tblwrap"><table class="sitetbl"><thead id="site-head"></thead><tbody id="site-body"></tbody></table></div>
+    <p class="note" style="margin:8px 0 0">終了が空欄のモードは「次のモードの開始まで」、後に始まるモードが無ければ無期限です。保存してからゲスト側に反映されるまで最大 60 秒かかります。</p>
+  </div>
+  <div class="panel">
+    <div class="row"><b>プレビュー</b><select id="site-pv"></select><span class="note">選んだモードで、ゲスト側に何が出るか（未保存の変更を含む）</span></div>
+    <div id="site-pv-out"></div>
+  </div>
+</section>
+
+<!-- ===== Movies（§4） ===== -->
+<section class="view" id="v-movies">
+  <h2>Movies</h2>
+  <p class="sub">結婚式後モードでゲスト向けの <code>/guide/movies/</code> に出す当日のムービー。ファイルは R2（wedding-media）に置き、ゲスト側 Worker 経由で配信します。</p>
+  <div class="alert">動画は事前に手元で変換してください（H.264/AAC、720p 約4Mbps・1080p 約8Mbps、faststart）。プロフィールムービーは 720p のみで可。変換例は README の「ムービーの変換」を参照。</div>
+  <div class="panel">
+    <div class="row" style="margin:0"><b>追加</b>
+      <input id="mv-slug" placeholder="slug（例：opening）" style="width:150px" autocapitalize="off" spellcheck="false">
+      <input id="mv-title" placeholder="タイトル（日本語）" style="width:220px">
+      <button class="btn s" id="mv-add">追加</button>
+      <span class="note">slug は英小文字・数字・ハイフン。ファイルの置き場所（movies/&lt;slug&gt;/）になるので後から変えられません</span></div>
+  </div>
+  <div id="mv-list"><p class="note">読み込み中…</p></div>
+</section>
+
+<!-- ===== ギフト＆感想（§5） ===== -->
+<section class="view" id="v-feedback">
+  <h2>ギフト＆感想</h2>
+  <p class="sub">ゲスト向けの「ひとこと」ページ（<code>/guide/thanks/</code>）から届いた、お持ち帰りいただいた品とひとこと。行をクリックすると内祝い記録（ご祝儀タブ）の同じ方の行を探します。</p>
+  <div class="cards" id="fb-cards"></div>
+  <div class="grid2" id="fb-sum"></div>
+  <div class="panel">
+    <div class="row">
+      <input id="fb-q" placeholder="お名前で検索" style="width:170px">
+      <select id="fb-table"><option value="">卓：すべて</option></select>
+      <select id="fb-item"><option value="">商品：すべて</option></select>
+      <span class="sp"></span>
+      <button class="btn o s" id="fb-csv">CSVダウンロード</button>
+    </div>
+    <div class="tblwrap"><table class="btbl"><thead><tr><th>日時</th><th>お名前</th><th>卓</th><th>引出物</th><th>引菓子</th><th>ひとこと</th><th>言語</th><th>内祝い記録</th><th></th></tr></thead>
+      <tbody id="fb-body"></tbody></table></div>
+    <p class="note" style="margin:10px 0 0" id="fb-count"></p>
+  </div>
+</section>
 </main>
 
 
@@ -429,6 +496,9 @@
 <div class="modal" id="m-giftd"><div class="mbox wide" id="m-giftd-box"></div></div>
 <div class="modal" id="m-gpop"><div class="mbox" id="m-gpop-box" style="width:400px"></div></div>
 <div class="modal" id="m-qr"><div class="mbox" id="m-qr-box" style="width:380px;text-align:center"></div></div>
+<div class="modal" id="m-confirm"><div class="mbox" id="m-confirm-box" style="width:440px"></div></div>
+<div class="modal" id="m-mv"><div class="mbox wide" id="m-mv-box"></div></div>
+<div class="modal" id="m-fb"><div class="mbox" id="m-fb-box"></div></div>
 
 <!-- B4: 空席をクリックしたときの配席ポップオーバー -->
 <div class="seatpop off" id="sv-pop"></div>

@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import * as GL from './gifts-logic.js';
+import * as MD from './modes.js';
 
 /* ============================== 設定 ============================== */
 const SUPA_URL = 'https://cvnqnvnppvfhwmrehagt.supabase.co';
@@ -476,12 +477,14 @@ async function logChange(target_table, target_id, action, reason, diff) {
 $$('#nav button').forEach(b => b.addEventListener('click', () => go(b.dataset.v)));
 function go(v) {
   if (seatLeaveGuard(v)) return;              /* 配席の未保存の変更を確認 */
+  if (MD.leaveGuard(v)) return;               /* 公開設定の未保存の変更を確認 */
   $$('#nav button').forEach(x => x.classList.toggle('on', x.dataset.v === v));
   $$('.view').forEach(s => s.classList.toggle('on', s.id === 'v-' + v));
   window.scrollTo(0, 0);
   if (v === 'reception') loadTokens();
   if (v === 'gifts') openGiftsTab();
   if (v === 'budget') renderBudget();
+  if (v === 'site' || v === 'movies' || v === 'feedback') MD.openTab(v);
 }
 $$('.modal').forEach(m => m.addEventListener('click', e => { if (e.target === m) m.classList.remove('on'); }));
 document.addEventListener('keydown', e => {
@@ -501,6 +504,8 @@ function fillCircleSelects() {
     sel.value = cur;
   }
 }
+/* 06: 公開設定・Movies・ギフト＆感想（modes.js） */
+MD.setupModes({ sb, $, $$, esc, toast, openModal, closeModal, wireClose, giftsFor: feedbackGifts, openGift: id => { go('gifts'); openGiftDetail(id); } });
 boot();
 
 /* ============================== 集計 ============================== */
@@ -6145,6 +6150,17 @@ function indexGifts() {
   for (const id of [...GF.sel]) if (!GF.byId.has(id)) GF.sel.delete(id);
 }
 const giftsOfGuest = gid => GF.ofGuest.get(gid) || [];
+/* 06: ギフト＆感想の 1 行 → 同じ方のご祝儀。候補から選んだ方は同じ回答（本人・同行者）の贈り主、
+   自由入力の方は贈り主の氏名（漢字・ローマ字、空白無視）の一致で探す */
+function feedbackGifts(fb) {
+  if (!GF.loaded || !fb) return [];
+  const p = fb.reply_person_id ? S.people.find(x => x.id === fb.reply_person_id) : null;
+  const key = norm(fb.guest_name);
+  return GF.rows.filter(row => row.givers.some(x => (p && x.replyId === p.reply_id)
+      || (key && (norm(x.name) === key || norm(x.latin) === key))))
+    .map(row => ({ id: row.gift.id, label: row.givers.map(x => x.name).filter(Boolean).join('・')
+      + (row.gift.envelope_name ? `（表書き：${row.gift.envelope_name}）` : '') }));
+}
 /* 予算タブの自動連動（読み込めていなければ null） */
 const giftLink = () => GF.loaded ? GL.budgetLink(GF.gifts, GF.returns) : null;
 function renderGiftsAll() { indexGifts(); renderGifts(); renderDash(); renderBudget(); }

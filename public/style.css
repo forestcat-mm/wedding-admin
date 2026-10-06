@@ -672,3 +672,44 @@ input.gtamt:focus{color:var(--ink);border-color:var(--ink2)}
 .goodsbox .chk1{margin-bottom:4px}
 .gthiki{min-width:640px}
 #m-gpop-box.wide2{width:560px}
+
+/* ===== 06 公開設定・Movies・ギフト＆感想 ===== */
+.tag[hidden],.badge-red[hidden]{display:none}
+.badge-red{display:inline-block;background:var(--enji);color:#fff;font-size:11px;padding:1px 8px;border-radius:2px;margin-left:6px;white-space:nowrap}
+.closedtxt{color:var(--enji)}
+#site-warn .warnline{color:var(--warn);font-size:12px;margin:2px 0}
+.sitetbl{min-width:1100px}
+.sitetbl td,.sitetbl th{vertical-align:top}
+.sitetbl th.fcol{font-size:11px;white-space:nowrap}
+.sitetbl td.ctr,.sitetbl th.ctr{text-align:center}
+.sitetbl input[type=text],.sitetbl input:not([type]),.sitetbl input[type=datetime-local]{border:1px solid var(--line);padding:4px 6px;font:inherit}
+.sitetbl .drag{cursor:grab;color:var(--ink2);user-select:none;width:18px}
+.sitetbl tr.dragging{opacity:.4}
+.sitetbl tr.dropto td{border-top:2px solid var(--enji)}
+.pvgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.pvgrid ul{margin:4px 0 10px;padding-left:18px}
+.mvcard .mvgrid{display:grid;grid-template-columns:220px 1fr;gap:16px}
+.mvposter{display:flex;flex-direction:column;gap:6px}
+.mvposter img,.mvposter .mvnone{width:220px;aspect-ratio:16/9;object-fit:cover;background:#eee8e0;border:1px solid var(--line)}
+.mvposter .mvnone{display:flex;align-items:center;justify-content:center;color:var(--ink2);font-size:12px}
+.mvfile{display:inline-block;text-align:center}
+.mvfile.disabled{opacity:.5;pointer-events:none}
+.mvcard .chk1{display:inline-flex;align-items:center;gap:4px;font-size:12px}
+.mvcard .chk1 input{width:auto;margin:0}
+.mvvars table{margin-top:4px;font-size:12px}
+.mvvars td,.mvvars th{padding:3px 8px}
+.mvprog{margin-top:8px}
+.mvprog .bar{height:8px}
+@media (max-width:760px){.mvcard .mvgrid{grid-template-columns:1fr}}
+.fbsum{width:100%;margin-top:6px;font-size:12px}
+.fbsum td{padding:3px 6px;border-bottom:1px solid #f1ece5}
+.fbsum td.num{text-align:right;width:36px}
+.fbthumb{width:34px}
+.fbthumb img{width:30px;height:30px;object-fit:cover;display:block}
+.fbbar{width:30%}
+.fbbar .bar{margin-top:0}
+.fbmsg{max-width:280px;white-space:pre-wrap;word-break:break-word;font-size:12px}
+.fbmsgbox{white-space:pre-wrap;background:#faf7f2;border:1px solid var(--line);padding:8px 10px}
+tr.clickrow{cursor:pointer}
+tr.clickrow:hover td{background:#faf7f2}
+.nowrap{white-space:nowrap}

@@ -10,6 +10,11 @@ not_found_handling = "404-page"
 # 受付の短縮URLと API だけ Worker が先に受ける。それ以外は静的ファイル
 run_worker_first = ["/r/*", "/api/*"]
 
+# ムービー（00_spec/06_modes_admin.md）。公開ドメインは付けない（配信はゲスト側 Worker 経由）
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "wedding-media"
+
 [vars]
 SUPABASE_URL = "https://cvnqnvnppvfhwmrehagt.supabase.co"
 SUPABASE_ANON_KEY = "sb_publishable_ZYwTP155dx57wEopKpezNA_LR1IOjID"

@@ -7,6 +7,14 @@
      GET  /api/reception/guests       受付用のゲスト一覧（連絡先などは含めない。v2.1: 出席する同行者 companions 付き）
      POST /api/reception/checkin      受付済 / 取り消し
      POST /api/reception/items/:id/hand  お渡し済 / 取り消し
+     POST /api/media/init             R2 マルチパートの開始（管理者のみ。以下 /api/media/* はすべて同じ）
+     PUT  /api/media/part             パート 1 つ（本文 = 最大 50MB）
+     POST /api/media/complete         マルチパートの完了
+     POST /api/media/abort            マルチパートの中断
+     PUT  /api/media/object?key=      小さいファイル（ポスター画像）を 1 回で保存
+     POST /api/media/sign             <video>/<img> で開くための期限付き URL（GET /api/media/object?…&sig=）
+     POST /api/media/delete           movies/<slug>/ 配下をまとめて削除、または key を 1 つ削除
+   ムービーのファイルは R2（binding: MEDIA、バケット wedding-media）。仕様：00_spec/06_modes_admin.md
    DB アクセスはすべてサービスロールキー（Secret: SUPABASE_SERVICE_ROLE_KEY）。
    Cookie の署名は Secret: RECEPTION_COOKIE_SECRET（HMAC-SHA256）。
    仕様：00_spec/08_reception.md（v1）、03_reception-v2.md（v2）、04_reception-v2.1.md（同行者）
@@ -25,6 +33,7 @@ export default {
     try {
       if (url.pathname.startsWith('/r/')) return await shortLink(request, env, url);
       if (url.pathname.startsWith('/api/reception/')) return await receptionApi(request, env, url, ctx);
+      if (url.pathname.startsWith('/api/media/')) return await mediaApi(request, env, url);
       if (url.pathname.startsWith('/api/')) return noStore(json({ error: 'not_found' }, 404));
     } catch (e) {
       return noStore(json({ error: 'server_error', message: String(e?.message || e) }, 500));
@@ -331,6 +340,151 @@ function ageAt(birthdate, age) {
   const mm = (EVENT_DATE.getMonth() + 1) - +m[2];
   if (mm < 0 || (mm === 0 && EVENT_DATE.getDate() - +m[3] < 0)) a--;
   return a >= 0 ? a : null;
+}
+
+/* ---------------- ムービー（R2：/api/media/*） ---------------- */
+/* 認証は管理者（Authorization: Bearer <Supabase access token>）だけ。受付トークンの Cookie では使えない。
+   例外は GET /api/media/object?…&sig= で、/api/media/sign が発行した期限付きの署名で開ける（<video> は Bearer を付けられないため） */
+const MEDIA_PART_MAX = 50 * 1024 * 1024;                     /* 1 パート 50MB */
+const MEDIA_FILE_MAX = 2 * 1024 * 1024 * 1024;               /* 1 ファイル 2GB */
+const MEDIA_MAX_PARTS = Math.ceil(MEDIA_FILE_MAX / MEDIA_PART_MAX);
+const MEDIA_IMAGE_MAX = 10 * 1024 * 1024;                    /* ポスター画像 10MB */
+const MEDIA_SIGN_SEC = 6 * 3600;
+const MEDIA_KEY = /^movies\/[a-z0-9-]+\/[A-Za-z0-9_-]+\.(mp4|jpg)$/;
+const MEDIA_PREFIX = /^movies\/[a-z0-9-]+\/$/;
+const isVideoKey = k => MEDIA_KEY.test(k) && k.endsWith('.mp4');
+const isPosterKey = k => MEDIA_KEY.test(k) && k.endsWith('/poster.jpg');
+
+async function authenticateAdmin(request, env) {
+  const auth = request.headers.get('authorization') || '';
+  if (!/^bearer\s+/i.test(auth)) return null;
+  const email = await verifySupabaseUser(env, auth.replace(/^bearer\s+/i, '').trim());
+  return email && isAdminEmail(env, email) ? { email } : null;
+}
+const mediaSig = (env, key, exp) => sign(env, `media|${key}|${exp}`);
+
+async function mediaApi(request, env, url) {
+  const rest = url.pathname.replace(/^\/api\/media\/?/, '').replace(/\/$/, '');
+  if (!env.MEDIA) return noStore(json({ error: 'no_bucket' }, 500));
+  if (rest === 'object' && (request.method === 'GET' || request.method === 'HEAD')) return signedGet(request, env, url);
+
+  if (!(await authenticateAdmin(request, env))) return noStore(json({ error: 'unauthorized' }, 401));
+  const bad = (error = 'bad_request', status = 400) => noStore(json({ error }, status));
+
+  if (rest === 'init') {
+    if (request.method !== 'POST') return bad('method', 405);
+    const body = await readJson(request);
+    if (!body || !isVideoKey(body.key || '')) return bad('bad_key');
+    if (body.content_type !== 'video/mp4') return bad('mp4_only');
+    const up = await env.MEDIA.createMultipartUpload(body.key, { httpMetadata: { contentType: 'video/mp4' } });
+    return noStore(json({ ok: true, key: up.key, uploadId: up.uploadId, partSize: MEDIA_PART_MAX }));
+  }
+  if (rest === 'part') {
+    if (request.method !== 'PUT') return bad('method', 405);
+    const key = url.searchParams.get('key') || '', uploadId = url.searchParams.get('uploadId') || '';
+    const n = Number(url.searchParams.get('partNumber'));
+    if (!isVideoKey(key) || !uploadId || !Number.isInteger(n) || n < 1 || n > MEDIA_MAX_PARTS) return bad();
+    const len = Number(request.headers.get('content-length'));
+    if (!len || len > MEDIA_PART_MAX) return bad('part_size');
+    if (!request.body) return bad('empty');
+    const part = await env.MEDIA.resumeMultipartUpload(key, uploadId).uploadPart(n, request.body);
+    return noStore(json({ ok: true, partNumber: part.partNumber, etag: part.etag }));
+  }
+  if (rest === 'complete') {
+    if (request.method !== 'POST') return bad('method', 405);
+    const body = await readJson(request);
+    const parts = Array.isArray(body?.parts) ? body.parts : [];
+    if (!isVideoKey(body?.key || '') || !body.uploadId || !parts.length || parts.length > MEDIA_MAX_PARTS
+        || !parts.every(p => Number.isInteger(p?.partNumber) && typeof p?.etag === 'string')) return bad();
+    const obj = await env.MEDIA.resumeMultipartUpload(body.key, body.uploadId)
+      .complete(parts.map(p => ({ partNumber: p.partNumber, etag: p.etag })));
+    if (obj.size > MEDIA_FILE_MAX) { await env.MEDIA.delete(body.key); return bad('too_large', 413); }
+    return noStore(json({ ok: true, key: obj.key, size: obj.size }));
+  }
+  if (rest === 'abort') {
+    if (request.method !== 'POST') return bad('method', 405);
+    const body = await readJson(request);
+    if (!isVideoKey(body?.key || '') || !body.uploadId) return bad();
+    try { await env.MEDIA.resumeMultipartUpload(body.key, body.uploadId).abort(); } catch { /* 完了済み・中断済み */ }
+    return noStore(json({ ok: true }));
+  }
+  if (rest === 'object' && request.method === 'PUT') {
+    const key = url.searchParams.get('key') || '';
+    if (!isPosterKey(key)) return bad('bad_key');
+    if ((request.headers.get('content-type') || '').split(';')[0].trim() !== 'image/jpeg') return bad('jpeg_only');
+    const buf = await request.arrayBuffer();
+    if (!buf.byteLength || buf.byteLength > MEDIA_IMAGE_MAX) return bad('image_size');
+    await env.MEDIA.put(key, buf, { httpMetadata: { contentType: 'image/jpeg' } });
+    return noStore(json({ ok: true, key, size: buf.byteLength }));
+  }
+  if (rest === 'sign') {
+    if (request.method !== 'POST') return bad('method', 405);
+    const body = await readJson(request);
+    const keys = Array.isArray(body?.keys) ? body.keys : [body?.key];
+    if (!keys.length || keys.length > 50 || !keys.every(k => MEDIA_KEY.test(k || ''))) return bad('bad_key');
+    const exp = Math.floor(Date.now() / 1000) + MEDIA_SIGN_SEC;
+    const urls = {};
+    for (const k of keys) urls[k] = `/api/media/object?key=${encodeURIComponent(k)}&exp=${exp}&sig=${await mediaSig(env, k, exp)}`;
+    return noStore(json({ ok: true, urls, url: urls[keys[0]] }));
+  }
+  if (rest === 'delete') {
+    if (request.method !== 'POST') return bad('method', 405);
+    const body = await readJson(request);
+    if (body?.key) {
+      if (!MEDIA_KEY.test(body.key)) return bad('bad_key');
+      await env.MEDIA.delete(body.key);
+      return noStore(json({ ok: true, deleted: 1 }));
+    }
+    if (!MEDIA_PREFIX.test(body?.prefix || '')) return bad('bad_prefix');
+    let cursor, deleted = 0;
+    do {
+      const page = await env.MEDIA.list({ prefix: body.prefix, cursor });
+      const keys = page.objects.map(o => o.key);
+      if (keys.length) { await env.MEDIA.delete(keys); deleted += keys.length; }
+      cursor = page.truncated ? page.cursor : undefined;
+    } while (cursor);
+    return noStore(json({ ok: true, deleted }));
+  }
+  return noStore(json({ error: 'not_found' }, 404));
+}
+
+/* GET/HEAD /api/media/object?key=&exp=&sig=（Range 対応） */
+async function signedGet(request, env, url) {
+  const key = url.searchParams.get('key') || '', exp = Number(url.searchParams.get('exp')), sig = url.searchParams.get('sig') || '';
+  if (!MEDIA_KEY.test(key) || !Number.isFinite(exp) || exp * 1000 < Date.now()) return noStore(json({ error: 'forbidden' }, 403));
+  if (!timingSafeEqual(sig, await mediaSig(env, key, exp))) return noStore(json({ error: 'forbidden' }, 403));
+  return serveR2(request, env.MEDIA, key, 'private, max-age=3600');
+}
+/* R2 のオブジェクトを Range 付きで返す（ゲスト側 Worker の /media/<key> と同じ考え方） */
+async function serveR2(request, bucket, key, cacheControl) {
+  const head = request.method === 'HEAD';
+  let obj;
+  try {
+    obj = await bucket.get(key, { range: request.headers, onlyIf: request.headers });
+  } catch {
+    const meta = await bucket.head(key);
+    if (!meta) return noStore(json({ error: 'not_found' }, 404));
+    return new Response(null, { status: 416, headers: { 'content-range': `bytes */${meta.size}`, 'accept-ranges': 'bytes' } });
+  }
+  if (!obj) return noStore(json({ error: 'not_found' }, 404));
+  const h = new Headers();
+  obj.writeHttpMetadata(h);
+  h.set('etag', obj.httpEtag);
+  h.set('accept-ranges', 'bytes');
+  h.set('cache-control', cacheControl);
+  h.set('x-robots-tag', 'noindex');
+  if (!('body' in obj)) return new Response(null, { status: 304, headers: h });   /* If-None-Match 一致 */
+  let status = 200, length = obj.size;
+  if (request.headers.has('range') && obj.range) {
+    const r = obj.range;
+    /* R2 は suffix: undefined のキーを持って返すことがあるので in ではなく値で判定する */
+    const offset = r.suffix != null ? obj.size - r.suffix : (r.offset ?? 0);
+    length = r.suffix != null ? r.suffix : (r.length ?? obj.size - offset);
+    h.set('content-range', `bytes ${offset}-${offset + length - 1}/${obj.size}`);
+    status = 206;
+  }
+  h.set('content-length', String(length));
+  return new Response(head ? null : obj.body, { status, headers: h });
 }
 
 /* ---------------- 案内ページ ---------------- */
