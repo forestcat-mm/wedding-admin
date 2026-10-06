@@ -1390,5 +1390,4 @@ RLS：有効　／　行数（CSV の rows）：1
 ### 7.5 その他
 
 - `updated_at` があるのに更新トリガー（`touch_updated_at`）が無い表：`app_settings`、`gift_check_items`、`gift_returns`、`gifts`、`live_settings`。`gifts`・`gift_returns`（wedding-admin）と `live_settings`（wedding-photos `src/lib/supabase.js` L389）はコード側で値を入れている。`app_settings`・`gift_check_items` で値が更新されているかは **要確認**。
-- `photos.content_hash` は通常ファイルの SHA-256 だが、wedding-photos の作業ツリーにある未コミットの変更（`tools/import-rsvp-photos.mjs` の `allow_duplicate`）では別の値を入れる。**要確認**：その変更をコミットするか。
 - 同じ内容の CHECK 制約が二重にある：`gifts` の `kind`・`route`・`side`（`*_check` と `*_chk`）。
