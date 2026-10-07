@@ -1,6 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import * as GL from './gifts-logic.js';
 import * as MD from './modes.js';
+import * as CT from './contents.js';
 
 /* ============================== 設定 ============================== */
 const SUPA_URL = 'https://cvnqnvnppvfhwmrehagt.supabase.co';
@@ -320,7 +321,10 @@ async function enter(user) {
   S.me = user;
   $('#me-mail').textContent = user.email.replace(MAIL_DOMAIN, '');
   $('#login').classList.add('off');
+  loadAdminConfig();
   await loadAll();
+  const v = viewFromHash();
+  if (v && v !== 'dash') go(v);
 }
 $('#lg-go').addEventListener('click', doLogin);
 $('#lg-pw').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
@@ -474,17 +478,71 @@ async function logChange(target_table, target_id, action, reason, diff) {
 }
 
 /* ============================== 画面切替 ============================== */
-$$('#nav button').forEach(b => b.addEventListener('click', () => go(b.dataset.v)));
+/* タブはグループ（ゲスト／ギフト／公開サイト／設定）に分けて並べる（00_spec/07_cms_admin.md §4）。
+   現在のタブは URL のハッシュ（#gifts など）に持ち、再読み込みしても同じタブを開く */
+let curView = 'dash';
+$$('#nav [data-v]').forEach(b => b.addEventListener('click', () => go(b.dataset.v)));
+const viewFromHash = () => { const v = decodeURIComponent(location.hash.slice(1)); return v && $('#v-' + CSS.escape(v)) ? v : null; };
 function go(v) {
-  if (seatLeaveGuard(v)) return;              /* 配席の未保存の変更を確認 */
-  if (MD.leaveGuard(v)) return;               /* 公開設定の未保存の変更を確認 */
-  $$('#nav button').forEach(x => x.classList.toggle('on', x.dataset.v === v));
+  if (v !== curView) {
+    if (seatLeaveGuard(v)) { setHash(curView); return false; }   /* 配席の未保存の変更を確認 */
+    if (MD.leaveGuard(v)) { setHash(curView); return false; }    /* 公開設定の未保存の変更を確認 */
+    if (CT.leaveGuard(v)) { setHash(curView); return false; }    /* コンテンツの未保存の変更を確認 */
+  }
+  curView = v;
+  $$('#nav [data-v]').forEach(x => x.classList.toggle('on', x.dataset.v === v));
+  const grp = $(`#nav [data-v="${v}"]`)?.closest('.ngrp');
+  if (grp) showNavGroup(grp.dataset.g);
   $$('.view').forEach(s => s.classList.toggle('on', s.id === 'v-' + v));
+  setHash(v);
   window.scrollTo(0, 0);
   if (v === 'reception') loadTokens();
   if (v === 'gifts') openGiftsTab();
   if (v === 'budget') renderBudget();
   if (v === 'site' || v === 'movies' || v === 'feedback') MD.openTab(v);
+  if (v === 'contents') CT.openTab();
+  return true;
+}
+function setHash(v) {
+  if (location.hash.slice(1) !== v) history.replaceState(null, '', v === 'dash' ? location.pathname + location.search : '#' + v);
+}
+window.addEventListener('hashchange', () => { const v = viewFromHash() || 'dash'; if (v !== curView) go(v); });
+/* スマホ：上のセグメントで表示するグループを切り替える（タブ自体は押すまで変えない） */
+function showNavGroup(g) {
+  $$('#nav .ngrp').forEach(x => x.classList.toggle('cur', x.dataset.g === g));
+  $$('#nav-seg [data-g]').forEach(x => x.classList.toggle('on', x.dataset.g === g));
+}
+$$('#nav-seg [data-g]').forEach(b => b.addEventListener('click', () => showNavGroup(b.dataset.g)));
+/* PC：グループ見出しで開閉、☰ でサイドバーごと折りたたむ（どちらもこの端末に記憶） */
+const NAV_KEY = 'admin.nav';
+function navPrefs() { try { return JSON.parse(localStorage.getItem(NAV_KEY)) || {}; } catch { return {}; } }
+function saveNavPrefs(p) { try { localStorage.setItem(NAV_KEY, JSON.stringify(p)); } catch {} }
+{
+  const p = navPrefs();
+  for (const g of p.closed || []) $(`#nav .ngrp[data-g="${g}"]`)?.classList.add('closed');
+  document.body.classList.toggle('navmin', !!p.min);
+  showNavGroup('guest');
+}
+$$('#nav .ngh').forEach(h => h.addEventListener('click', () => {
+  h.parentElement.classList.toggle('closed');
+  saveNavPrefs({ ...navPrefs(), closed: $$('#nav .ngrp.closed').map(x => x.dataset.g) });
+}));
+$('#nav-tgl').addEventListener('click', () => {
+  const min = document.body.classList.toggle('navmin');
+  saveNavPrefs({ ...navPrefs(), min });
+});
+/* PHOTO TOSS の管理画面・ゲスト向けサイトの URL（wrangler.toml の vars を /api/admin/config から） */
+const CFG = { photos_admin_url: '', guest_site_url: 'https://wedding.forest-mm.com' };
+async function loadAdminConfig() {
+  try {
+    const { data } = await sb.auth.getSession();
+    const res = await fetch('/api/admin/config', { headers: { authorization: `Bearer ${data.session?.access_token || ''}` } });
+    if (!res.ok) return;
+    const j = await res.json();
+    if (j.guest_site_url) CFG.guest_site_url = j.guest_site_url;
+    CFG.photos_admin_url = j.photos_admin_url || '';
+  } catch { return; }
+  $$('[data-photos-admin]').forEach(a => { a.href = CFG.photos_admin_url; a.hidden = !CFG.photos_admin_url; });
 }
 $$('.modal').forEach(m => m.addEventListener('click', e => { if (e.target === m) m.classList.remove('on'); }));
 document.addEventListener('keydown', e => {
@@ -506,6 +564,8 @@ function fillCircleSelects() {
 }
 /* 06: 公開設定・Movies・ギフト＆感想（modes.js） */
 MD.setupModes({ sb, $, $$, esc, toast, openModal, closeModal, wireClose, giftsFor: feedbackGifts, openGift: id => { go('gifts'); openGiftDetail(id); } });
+/* 07: コンテンツ（contents.js） */
+CT.setupContents({ sb, $, $$, esc, toast, openModal, closeModal, me: () => S.me, guestSite: () => CFG.guest_site_url });
 boot();
 
 /* ============================== 集計 ============================== */

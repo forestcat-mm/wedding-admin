@@ -1,0 +1,228 @@
+{
+  "greeting": {
+    "hero": "photos/hero/guide.jpg",
+    "kicker": "WEDDING GUIDE",
+    "names": "Takayuki & Momoe",
+    "date": "2026.09.26 · RIHGA ROYAL HOTEL TOKYO",
+    "title": "本日はお越しいただきありがとうございます",
+    "body": "ふたりのこれまでの歩み、本日のお席とお料理、そして感謝を込めて選んだ贈り物をご案内します。お食事の合間に、ゆっくりご覧ください。",
+    "cards": [
+      { "key": "story",   "en": "Our Story",    "text": "ふたりのこれまで",           "photo": "photos/story/meet-01.jpg" },
+      { "key": "movies",  "en": "Movies",       "text": "当日のムービー",             "photo": "photos/hero/guide.jpg" },
+      { "key": "seating", "en": "Seating",      "text": "本日のお席",                 "photo": "photos/hero/guide.jpg" },
+      { "key": "menu",    "en": "Menu",         "text": "お料理とお飲み物",           "photo": "photos/menu/juice.png" },
+      { "key": "marche",  "en": "Gift Marché",  "text": "お好きな贈り物をお選びください", "photo": "photos/marche/g01.jpg" },
+      { "key": "thanks",  "en": "Thank You",    "text": "受け取った品とひとこと",     "photo": "photos/marche/s08.jpg" },
+      { "key": "photos",  "en": "PHOTO SHOWER", "text": "本日の写真をシェア",         "photo": "" }
+    ]
+  },
+
+  "story": {
+    "hero": "photos/story/hero.jpg",
+    "kicker": "OUR STORY",
+    "title": "ふたりのこれまで",
+    "hint": "＋ でエピソードが開きます",
+    "open_all": "すべて開く",
+    "close_all": "すべて閉じる",
+    "chapter1": {
+      "en": "CHAPTER I", "title": "生い立ち",
+      "bride": {
+        "role": "BRIDE", "name": "百慧", "latin": "Momoe", "portrait": "../images/bride.webp",
+        "items": [
+          {"year": "1992.7", "title": "洛陽に生まれる", "text": "九朝の古都・洛陽で育ちました。小学校の先生だった母は教育熱心で、幼稚園のころは自転車の後ろに乗せられ、街の看板を読みながら漢字を覚えました。よく笑い、いつも周りを笑顔にする女の子でした。", "photo": "photos/story/bride-01.jpg"},
+          {"year": "1999.2", "title": "来日、静岡・沼津へ", "text": "単身赴任していた父のもとへ、母と一緒に初めて日本へ。沼津の澄んだ空気と、濁りのない青い空が印象的でした。五十音もわからない状態から必死に勉強し、練習帳を1週間で使い切って指にたこができたことも。", "photo": "photos/story/bride-02.jpg"},
+          {"year": "1999.7", "title": "小学校に転校", "text": "1年生の7月に転校したころには、クラスメイトと難なく話せるようになっていました。中国語も忘れないようにと、長い休みには定期的に中国へ帰っていました。"},
+          {"year": "小5", "title": "中国の学校に半年編入", "text": "日本の小学校からいったん転出し、本格的に中国の小学校へ編入。進度の違う授業や、日本ではまだ習っていなかった英語に苦労しながらも、なんとか食らいついていきました。", "photo": "photos/story/bride-04.jpg"},
+          {"year": "中学", "title": "「わたしの主張」", "text": "14歳のときに弟が誕生。同じころ、日中友好を願う作文が学校代表に選ばれ、「わたしの主張」静岡県大会で最優秀賞をいただきました。卒業直前に日本へ帰化し、名前も日本名に。新しい名前で初めて臨んだ高校受験では、名前欄を何度も確認しました。", "photo": "photos/story/bride-05.jpg"},
+          {"year": "高校", "title": "沼津東高校", "text": "三権分立の生徒会、応援歌の訓練、2kmの遠泳、高原教室。一風変わった校風のもとで、青春の思い出がたくさんできました。英語のスピーチコンテストにも何度も出場し、優勝特典でニュージーランドへ短期ホームステイしたり、東京大学の安田講堂でスピーチする機会に恵まれたりも。香陵祭（学園祭）では実行委員長をつとめ、充実した高校生活を送りました。", "photo": "photos/story/bride-06.jpg"},
+          {"year": "大学", "title": "早稲田大学国際教養学部", "text": "英語でリベラルアーツを学ぶ、当時はまだ少し新しかった学部へ進学。1年間必須の留学先には上海・復旦大学を選び、ダブルディグリーで2つの学位を取得しました。自分と同じような立場で育つ子どものアイデンティティ形成に興味を持ち、家庭環境とアイデンティティをテーマに卒業論文を書きました。", "photo": "photos/story/bride-07.jpg"},
+          {"year": "卒業後", "title": "エンジニアとして働く", "text": "大学1年生のころからスタートアップで iPhone アプリの開発に携わったことをきっかけに IT 業界へ。エンジニアとしての道を選び、VOYAGE GROUP に就職しました。個性豊かな同期・先輩後輩に恵まれ、仕事もプライベートも大切な仲間になりました。", "photo": "photos/story/bride-08.jpg"},
+          {"year": "2018", "title": "華為技術日本へ", "text": "強みの中国語を仕事で活かしたいと、華為技術日本の研究所へ転職。人事・秘書として採用されました。", "photo": "photos/story/bride-09.jpg"},
+          {"year": "2020", "title": "華為を退社、フリーランスに", "text": "ペット関連のスタートアップに参画するなど、コロナ禍を機に自由な働き方へ転換しました。"},
+          {"year": "2024", "title": "Waseda Business School へ", "text": "MBA で学び直したいと一念発起し、早稲田大学経営管理研究科（Waseda Business School）に進学しました。"},
+          {"year": "2026.3", "title": "MBA を修了", "text": "修士論文を書き上げ、無事に卒業しました。", "photo": "photos/story/bride-12.jpg"}
+        ]
+      },
+      "groom": {
+        "role": "GROOM", "name": "喬由樹", "latin": "Takayuki", "portrait": "../images/groom.webp",
+        "items": [
+          {"year": "1994.6", "title": "新宿に生まれる", "text": "通訳の母と、鰻屋を営む父のもとに生まれました。7ヶ月・約1800gの未熟児で保温箱に1ヶ月入っていましたが、無事に元気に育ちました。名前には「背が高く、自由な木のように育ってほしい」という願いが込められています。", "photo": "photos/story/groom-01.jpg"},
+          {"year": "幼少期", "title": "新百合ヶ丘、そして北京", "text": "父の鰻屋の近く、新百合ヶ丘へ。父がたどたどしい中国語で熱心に漢詩を教えてくれる、バイリンガルな環境で育ちました。長い休みには北京の祖父母の家に送られ、現地の幼稚園や小学校に短期通学。画数の多い名前を漢字で書くのが嫌で、「なぜもっと簡単な名前にしなかったのか」と文句を言っていたそうです。", "photo": "photos/story/groom-02.jpg"},
+          {"year": "小2〜", "title": "ずっと日本で", "text": "小学2年生からはずっと日本。教育熱心な父は自宅の窓一面に黒板を設置し、採光が悪くなったのも今ではいい思い出です。野球が大好きで、公園で父や友達とよく練習していました。", "photo": "photos/story/groom-03.jpg"},
+          {"year": "中高", "title": "聖光学院", "text": "中学受験を経て横浜の聖光学院へ。中高一貫の6年間で、今も切磋琢磨し合う大切な友人たちに出会いました。野球部は故障でほとんど活躍できず、高校では帰宅部に。そのぶん隙あらば旅行や野球観戦を企画し、聖光祭では毎年出店の店長として大盛況。まとまらなそうなメンバーで、なぜか統制の取れたチームをつくるのは、このころからの得意技です。", "photo": "photos/story/groom-04.jpg"},
+          {"year": "大学", "title": "東京大学経済学部", "text": "既習外国語を話すメンバーが集まるインタークラスに配属。サークルは野球観戦でした。中国語クラスで似た背景を持つ友人に出会い、ガチ中華を探し歩くように。言葉の通じない文化圏への旅が趣味になったのも、このころです。", "photo": "photos/story/groom-05.jpg"},
+          {"year": "留学", "title": "北京大学", "text": "自分のルーツをたどりたいと、北京大学へ留学。早稲田からの留学生同期にも恵まれました。現地の学生とともに受講した中国政治概論では、学生代表のひとりとしてプレゼンをする機会もありました。", "photo": "photos/story/groom-06.jpg"},
+          {"year": "留学終盤", "title": "父の急逝、通訳の道へ", "text": "留学の終わりごろ、最愛の父が急逝。最速で駆けつけましたが、最期には立ち会えませんでした。失意の中で大学院の受験準備が足りず、知人の紹介で華為に通訳として入社しました。"},
+          {"year": "現在", "title": "「森さんなら大丈夫」", "text": "仕事のかたわら週末は通訳学校に通い、通訳としての才能が開花。大切な商談や会議、メディア対応で各部署から頼られ、今は日本と中国を中心に各地を飛び回っています。分かりやすく、聞き取りやすく、存在を感じさせない通訳がモットー。社内外でなぜか「森さんなら大丈夫」が通用しているそうです。", "photo": "photos/story/groom-08.jpg"}
+        ]
+      }
+    },
+    "chapter2": {
+      "en": "CHAPTER II", "title": "出会い", "hero": "photos/story/meet-hero.jpg",
+      "items": [
+        {"year": "2018.4", "title": "新入社員オリエンテーションで", "text": "華為の新入社員オリエンテーション（NEO）で、通訳と新入社員として出会いました。同世代が多かったので何人かで食事をし、「90年代生まれグループ」も作りましたが、そのグループチャットは以後まったく動かず。", "photo": "photos/story/meet-01.jpg"},
+        {"year": "2018〜", "title": "ときどきランチ、ときどき雑談", "text": "似た背景で波長が合い、仕事の情報交換や雑談をしたり、互いのオフィスに寄るタイミングでランチをしたりするようになりました。"},
+        {"year": "2020〜", "title": "ゆるく続く親友", "text": "百慧が華為を退職し、コロナ禍の引っ越しで疎遠になっても、誕生日と年末年始の挨拶は欠かさず。1〜2年に一度はアフタヌーンティーやお酒を楽しみながら、何時間も話し込みました。恋愛感情はまったくなく、真面目な仕事の話もくだらない世間話もできる親友でした。", "photo": "photos/story/meet-03.jpg"}
+      ]
+    },
+    "chapter3": {
+      "en": "CHAPTER III", "title": "交際から、これから",
+      "items": [
+        {"year": "2024", "title": "また連絡が増える", "text": "百慧の WBS 進学を機に東西線沿線に戻り、連絡の頻度がぐっと上がりました。周囲の結婚が増え、恋愛や将来の話も増えるように。よく考えてみれば、考えも波長も合い、一を聞いて十を知ることがお互いにできる、安心して背中を預けられる存在になっていました。"},
+        {"year": "2025.2.1", "title": "交際スタート", "text": "気づけばただの友達から恋人のような関係になり、結婚を前提に正式にお付き合いを始めました。そこからは怒涛の半年。双方の親へ挨拶に行きました。", "photo": "photos/story/love-02.jpg"},
+        {"year": "2025.7.9", "title": "プロポーズ", "text": "百慧の誕生日に、108本の赤い薔薇でプロポーズ。", "photo": "photos/story/love-03.jpg"},
+        {"year": "2025.8", "title": "両家顔合わせ、新居へ", "text": "両家の顔合わせを済ませ、新居をかまえました。", "photo": "photos/story/love-04.jpg"},
+        {"year": "2025 秋", "title": "百慧、上海へ交換留学", "text": "百慧が上海の MBA 課程へ交換留学。", "photo": "photos/story/love-05.jpg"},
+        {"year": "2026.2.1", "title": "婚姻届を提出", "text": "百慧の帰国後、交際1周年の記念日に婚姻届を提出。実はその日は修士論文の口頭試問の日でもありました。", "photo": "photos/story/love-06.jpg"},
+        {"year": "2026.5.4", "title": "蘇州で挙式", "text": "中国・蘇州で挙式を行いました。", "photo": "photos/story/love-07.jpg"}
+      ]
+    },
+    "honeymoon_en": "HONEYMOON", "honeymoon_title": "2026.8 新婚旅行",
+    "honeymoon": [
+      {"en": "Bordeaux", "ja": "ボルドー", "text": "念願のワイナリー見学♡", "photos": ["photos/honeymoon/bordeaux-01.jpg", "photos/honeymoon/bordeaux-02.jpg", "photos/honeymoon/bordeaux-03.jpg"]},
+      {"en": "Paris", "ja": "パリ", "text": "芸術に酔いしれた日々。行きたいところを全部回るには時間が足りませんでした！ ホテルの部屋の中には謎の階段も。", "photos": ["photos/honeymoon/paris-01.jpg", "photos/honeymoon/paris-02.jpg", "photos/honeymoon/paris-03.jpg"]},
+      {"en": "Roma", "ja": "ローマ", "text": "ヴァチカン市国に入国！ 日帰りで行ったポンペイでは黒焦げになりました…", "photos": ["photos/honeymoon/roma-01.jpg", "photos/honeymoon/roma-02.jpg", "photos/honeymoon/roma-03.jpg"]},
+      {"en": "Venezia", "ja": "ヴェネツィア", "text": "離島のリゾートホテルでまったり過ごしました。", "photos": ["photos/honeymoon/venezia-01.jpg", "photos/honeymoon/venezia-02.jpg", "photos/honeymoon/venezia-03.jpg"]}
+    ],
+    "closing": {"year": "2026.9.26", "text": "今日、みなさまと。"}
+  },
+
+  "menu": {
+    "hero": "photos/hero/guide.jpg",
+    "kicker": "MENU",
+    "title": "お料理とお飲み物",
+    "courses_title": "お料理",
+    "courses": [
+      { "no": "I",   "name": "フォアグラのマカロン仕立て", "sub": "カカオの香り" },
+      { "no": "II",  "name": "ソフトに火入れしたノルウェーサーモンと鮮やかな酸味の野菜マリネ", "sub": "バジル香るソース" },
+      { "no": "III", "name": "森のキノコのクリームスープ", "sub": "カプチーノ仕立て　トリュフオイル風味" },
+      { "no": "IV",  "name": "祝鯛のポワレとポテトのピュレ", "sub": "ブイヤベース風のソースで" },
+      { "no": "V",   "name": "特選牛フィレのグリエ", "sub": "茸のデュクセルを添えて　赤ワインソース" },
+      { "no": "VI",  "name": "クレープシュゼット", "sub": "" }
+    ],
+    "drinks_title": "お飲み物",
+    "drinks": [
+      { "en": "ALCOHOL", "title": "お酒", "items": [
+        { "k": "赤ワイン", "v": "シャトー セルメジャン" },
+        { "k": "白ワイン", "v": "シャブリ（ウィリアム・フェーブル）" },
+        { "k": "その他",   "v": "ビール・日本酒・焼酎・ウィスキー" }
+      ] },
+      { "en": "SOFT DRINKS", "title": "ソフトドリンク", "items": [
+        { "k": "ジュース", "v": "オレンジ・グレープフルーツ" },
+        { "k": "お茶",     "v": "ウーロン茶" }
+      ] }
+    ],
+    "special": {
+      "en": "FROM THE COUPLE",
+      "title": "ふたりのスペシャルソフトドリンク",
+      "items": [
+        { "name": "ポール ジロー スパークリング グレープジュース 2025", "body": "コニャック用のぶどうをそのまま搾った、毎年数量限定の希少なジュース。今回わずかにお迎えできました。豊かな甘みとまろやかな味わいをお楽しみください。", "photo": "photos/menu/juice.png", "side": "left" },
+        { "name": "丸七製茶 CRAFT BREW TEA TOKYO", "body": "東京・東大和でつくられる和紅茶。ほのかにマスカットを思わせる香りをどうぞ。", "photo": "photos/menu/tea.png", "side": "right" }
+      ],
+      "note": "数に限りがございます。お酒を召し上がらない方やお子さまに優先してお楽しみいただけましたら幸いです。ご希望に添えない場合は、どうぞご容赦ください。"
+    }
+  },
+
+  "marche": {
+    "hero": "photos/hero/guide.jpg",
+    "kicker": "GIFT MARCHÉ",
+    "title": "ギフトマルシェ",
+    "intro": "感謝の気持ちを込めて選んだ品々です。引出物から1つ、引菓子から1つ、お好きなものをお持ち帰りください。",
+    "hint": "気になる品は ♡ で Considering Box に入れて見比べられます",
+    "sections": [
+      {
+        "id": "hikidemono", "en": "HIKIDEMONO", "title": "引出物", "note": "1つお選びください",
+        "items": [
+          { "id": "g01", "brand": "リーガロイヤルホテル", "name": "オヴァチュア レッドワインペア", "detail": "", "photo": "photos/marche/g01.jpg" },
+          { "id": "g02", "brand": "今治謹製", "name": "極上タオル フェイスタオル2P〈木箱入〉", "detail": "", "photo": "photos/marche/g02.jpg" },
+          { "id": "g03", "brand": "ReFa", "name": "HEART BRUSH", "detail": "ブルーヘブン／アンティークローズ／サンセットグロウ／ピンクアナベル／ブルースター", "photo": "photos/marche/g03.jpg" },
+          { "id": "g04", "brand": "ReFa", "name": "AILE BRUSH", "detail": "ローズゴールド／シルバー", "photo": "photos/marche/g04.jpg" },
+          { "id": "g05", "brand": "ReFa", "name": "LOCK OIL BLOOM 120mL", "detail": "", "photo": "photos/marche/g05.jpg" },
+          { "id": "g06", "brand": "CLAYD", "name": "ワンタイムギフト", "detail": "", "photo": "photos/marche/g06.jpg" },
+          { "id": "g07", "brand": "", "name": "ホットアイマスク にゃんづくしギフト（21枚入り）", "detail": "", "photo": "photos/marche/g07.jpg" },
+          { "id": "g08", "brand": "煎茶堂東京", "name": "お茶2缶ギフト", "detail": "白桃煎茶 はるみどり＋藤枝かおり／白桃煎茶 はるみどり＋静7132／レモングラス茶＋やぶきた本山／レモングラス茶＋おくみどり本山／レモングラス茶＋香駿", "photo": "photos/marche/g08.jpg" },
+          { "id": "g09", "brand": "GIN NO MORI", "name": "プティボワ150", "detail": "通常版／Autumn", "photo": "photos/marche/g09.jpg" },
+          { "id": "g10", "brand": "L'ABEILLE", "name": "アカシアはちみつ＋はちみつペースト 栗 2本ギフト", "detail": "", "photo": "photos/marche/g10.jpg" },
+          { "id": "g11", "brand": "MOFT", "name": "8-in-1 多機能スタンド MagSafe対応", "detail": "デザートゴールド／ミスティグレー", "photo": "photos/marche/g11.jpg" },
+          { "id": "g12", "brand": "shu uemura", "name": "クレンジングオイル", "detail": "", "photo": "photos/marche/g12.jpg" },
+          { "id": "g13", "brand": "Dior", "name": "アディクト リップ マキシマイザー", "detail": "", "photo": "photos/marche/g13.jpg" },
+          { "id": "g14", "brand": "Anker", "name": "トラベルアダプタ（5-in-1）", "detail": "", "photo": "photos/marche/g14.jpg" },
+          { "id": "g15", "brand": "TENTIAL", "name": "アイマスク", "detail": "", "photo": "photos/marche/g15.jpg" },
+          { "id": "g16", "brand": "ニッカ", "name": "フロム・ザ・バレル", "detail": "", "photo": "photos/marche/g16.jpg" },
+          { "id": "g17", "brand": "SHIRO", "name": "CHERISH MY LOVE ハンド美容液", "detail": "", "photo": "photos/marche/g17.jpg" },
+          { "id": "g18", "brand": "SHIRO", "name": "PEONY BLISS ボディミスト", "detail": "", "photo": "photos/marche/g18.jpg" },
+          { "id": "g19", "brand": "SHIRO", "name": "ホワイトリリー ファブリックソフナー", "detail": "", "photo": "photos/marche/g19.jpg" },
+          { "id": "g20", "brand": "Santa Maria Novella", "name": "タボレッタ ローザ ノヴェッラ 2枚入り", "detail": "", "photo": "photos/marche/g20.jpg" }
+        ]
+      },
+      {
+        "id": "hikigashi", "en": "HIKIGASHI", "title": "引菓子", "note": "1つお選びください",
+        "items": [
+          { "id": "s01", "brand": "リーガロイヤルホテル", "name": "濃厚ガトーショコラ", "detail": "3個入り", "photo": "photos/marche/s01.jpg" },
+          { "id": "s02", "brand": "リーガロイヤルホテル", "name": "はちみつマドレーヌ", "detail": "4個入り", "photo": "photos/marche/s02.jpg" },
+          { "id": "s03", "brand": "リーガロイヤルホテル", "name": "ヘーゼルナッツキャラメルタルト", "detail": "", "photo": "photos/marche/s03.jpg" },
+          { "id": "s04", "brand": "リーガロイヤルホテル", "name": "チーズケーキ", "detail": "", "photo": "photos/marche/s04.jpg" },
+          { "id": "s05", "brand": "PISTACHIO TOKYO", "name": "ピスタチオショコラ", "detail": "", "photo": "photos/marche/s05.jpg" },
+          { "id": "s06", "brand": "益や", "name": "ほろ酔い専用セット", "detail": "", "photo": "photos/marche/s06.jpg" },
+          { "id": "s07", "brand": "Mr. CHEESECAKE", "name": "Gift Bag", "detail": "4個入り", "photo": "photos/marche/s07.jpg" },
+          { "id": "s08", "brand": "PARIS BUTTER CHOCOLAT", "name": "パリバターショコラ", "detail": "", "photo": "photos/marche/s08.jpg" },
+          { "id": "s09", "brand": "JEAN-PAUL HÉVIN", "name": "キト", "detail": "", "photo": "photos/marche/s09.jpg" },
+          { "id": "s11", "brand": "PRESS BUTTER SAND", "name": "バターサンド〈蜜芋〉", "detail": "", "photo": "photos/marche/s11.jpg" },
+          { "id": "s12", "brand": "PRESS BUTTER SAND", "name": "バターサンド〈栗〉", "detail": "", "photo": "photos/marche/s12.jpg" }
+        ]
+      }
+    ],
+    "box_note": "お決まりになったら、会場のマルシェコーナーでお受け取りください。"
+  },
+
+  "movies": {
+    "hero": "photos/hero/guide.jpg",
+    "kicker": "MOVIES",
+    "title": "当日のムービー",
+    "intro": "披露宴で上映したムービーです。通信量が大きいので Wi-Fi 環境でのご視聴をおすすめします。",
+    "play": "再生する",
+    "close": "閉じる",
+    "quality": "画質",
+    "save": "保存",
+    "empty": "ムービーは準備中です。もうしばらくお待ちください。",
+    "story_link": "当日のムービーはこちら →"
+  },
+
+  "thanks": {
+    "hero": "photos/hero/guide.jpg",
+    "kicker": "THANK YOU",
+    "title": "ご参加ありがとうございました",
+    "intro": "お持ち帰りいただいた品と、よろしければひとことをお聞かせください。内祝いの参考にさせていただきます。",
+    "name_title": "お名前",
+    "name_label": "お名前・ローマ字で検索",
+    "name_ph": "例：吉永 / Yoshinaga",
+    "name_hint": "2文字以上で候補が出ます。ご自身のお名前を選んでください。",
+    "name_change": "選び直す",
+    "not_found": "見つからない方はこちら",
+    "back_to_search": "名前の検索に戻る",
+    "free_name": "お名前",
+    "free_email": "メールアドレス（任意）",
+    "required": "必須",
+    "items_title": "お持ち帰りいただいた品",
+    "items_hint": "引出物・引菓子から1つずつお選びください。Gift Marché で ♡ を付けた品が先頭に並びます。",
+    "none": "選ばなかった／覚えていない",
+    "message_title": "ひとこと",
+    "message_ph": "ふたりへのメッセージ（任意）",
+    "left": "残り {n} 字",
+    "submit": "送信する",
+    "sending": "送信中…",
+    "done": "ありがとうございました。ふたりで大切に読ませていただきます。",
+    "sent": "送信済みです。",
+    "edit": "内容を変更する",
+    "err_name": "お名前を選ぶか、入力してください。",
+    "err_email": "メールアドレスの形式をご確認ください。",
+    "err_send": "送信できませんでした。電波の良い場所でもう一度お試しください。",
+    "err_busy": "送信が続いています。しばらくしてからお試しください。",
+    "err_long": "ひとことは250字までです。"
+  },
+
+  "links": {
+    "photos": "https://wedding-photos.forest-mm.com/",
+    "invitation": "/"
+  }
+}

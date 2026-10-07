@@ -21,6 +21,10 @@ SUPABASE_ANON_KEY = "sb_publishable_ZYwTP155dx57wEopKpezNA_LR1IOjID"
 # 管理者として /api/reception/* を使えるメール（カンマ区切り）。空なら ADMIN_EMAIL_DOMAIN のドメインで判定
 ADMIN_EMAILS = ""
 ADMIN_EMAIL_DOMAIN = "forest-mm.com"
+# サイドバーの「PHOTO TOSS 管理 ↗」のリンク先（トークンは含めない。00_spec/07_cms_admin.md §5）
+PHOTOS_ADMIN_URL = "https://wedding-photos.forest-mm.com/admin/"
+# コンテンツタブのプレビュー・写真の表示に使うゲスト向けサイト
+GUEST_SITE_URL = "https://wedding.forest-mm.com"
 
 # Secrets（wrangler secret put で登録。ここには書かない）
 #   SUPABASE_SERVICE_ROLE_KEY   Supabase のサービスロールキー

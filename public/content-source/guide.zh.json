@@ -1,0 +1,228 @@
+{
+  "greeting": {
+    "hero": "photos/hero/guide.jpg",
+    "kicker": "WEDDING GUIDE",
+    "names": "Takayuki & Momoe",
+    "date": "2026.09.26 · RIHGA ROYAL HOTEL TOKYO",
+    "title": "感谢各位今天的光临",
+    "body": "在这里，我们将为您介绍两人一路走来的故事、今天的座位与菜单，以及满怀感谢之情挑选的礼物。请在用餐之余慢慢浏览。",
+    "cards": [
+      { "key": "story",   "en": "Our Story",    "text": "两人的故事",         "photo": "photos/story/meet-01.jpg" },
+      { "key": "movies",  "en": "Movies",       "text": "当天的影片",         "photo": "photos/hero/guide.jpg" },
+      { "key": "seating", "en": "Seating",      "text": "今天的座位",         "photo": "photos/hero/guide.jpg" },
+      { "key": "menu",    "en": "Menu",         "text": "菜品与饮品",         "photo": "photos/menu/juice.png" },
+      { "key": "marche",  "en": "Gift Marché",  "text": "请挑选您喜欢的礼物", "photo": "photos/marche/g01.jpg" },
+      { "key": "thanks",  "en": "Thank You",    "text": "带回的礼品与留言",   "photo": "photos/marche/s08.jpg" },
+      { "key": "photos",  "en": "PHOTO SHOWER", "text": "分享今天的照片",     "photo": "" }
+    ]
+  },
+
+  "story": {
+    "hero": "photos/story/hero.jpg",
+    "kicker": "OUR STORY",
+    "title": "两人的故事",
+    "hint": "点击 ＋ 展开故事",
+    "open_all": "全部展开",
+    "close_all": "全部收起",
+    "chapter1": {
+      "en": "CHAPTER I", "title": "成长经历",
+      "bride": {
+        "role": "BRIDE", "name": "百慧", "latin": "Momoe", "portrait": "../images/bride.webp",
+        "items": [
+          {"year": "1992.7", "title": "出生于洛阳", "text": "在九朝古都洛阳长大。当小学老师的母亲非常重视教育，上幼儿园时，坐在自行车后座上，一边读街上的招牌一边认汉字。是个爱笑、总能让身边的人露出笑容的女孩。", "photo": "photos/story/bride-01.jpg"},
+          {"year": "1999.2", "title": "来到日本，静冈沼津", "text": "和母亲一起第一次来到日本，与只身赴任的父亲团聚。沼津清新的空气和澄澈湛蓝的天空令人印象深刻。从连五十音都不会开始拼命学习，一周就用完了一本练习册，手指上还磨出了茧。", "photo": "photos/story/bride-02.jpg"},
+          {"year": "1999.7", "title": "转入日本小学", "text": "一年级7月转学时，已经能和同学们毫无障碍地交流了。为了不忘记中文，每逢长假都会定期回中国。"},
+          {"year": "小学五年级", "title": "插班中国学校半年", "text": "暂时从日本的小学转出，正式插班进入中国的小学。课程进度不同，还要学在日本尚未学过的英语，吃了不少苦头，但还是咬紧牙关跟了下来。", "photo": "photos/story/bride-04.jpg"},
+          {"year": "初中", "title": "“我的主张”", "text": "14岁时弟弟出生。同一时期，一篇祈愿日中友好的作文被选为学校代表，在“我的主张”静冈县大赛中荣获最优秀奖。毕业前夕加入日本国籍，名字也改成了日本名字。第一次用新名字参加高中入学考试时，反复确认了好几遍姓名栏。", "photo": "photos/story/bride-05.jpg"},
+          {"year": "高中", "title": "沼津东高中", "text": "三权分立的学生会、应援歌训练、2公里远泳、高原教室。在别具一格的校风下，留下了许多青春回忆。多次参加英语演讲比赛，凭借冠军奖励赴新西兰短期寄宿家庭，还有幸在东京大学安田讲堂发表演讲。在香陵祭（校园文化节）担任执行委员长，度过了充实的高中生活。", "photo": "photos/story/bride-06.jpg"},
+          {"year": "大学", "title": "早稻田大学国际教养学部", "text": "进入用英语学习博雅教育、当时还比较新的学部。在必修一年的留学中选择了上海复旦大学，通过双学位项目取得了两个学位。对与自己背景相似的孩子如何形成身份认同产生兴趣，以家庭环境与身份认同为题撰写了毕业论文。", "photo": "photos/story/bride-07.jpg"},
+          {"year": "毕业后", "title": "成为工程师", "text": "大学一年级起在创业公司参与 iPhone 应用开发，由此进入 IT 行业。选择了工程师之路，入职 VOYAGE GROUP。遇到了一群个性鲜明的同期和前后辈，无论工作还是生活，都成了珍贵的伙伴。", "photo": "photos/story/bride-08.jpg"},
+          {"year": "2018", "title": "加入华为技术日本", "text": "希望在工作中发挥中文的优势，跳槽到华为技术日本的研究所，被录用为人事兼秘书。", "photo": "photos/story/bride-09.jpg"},
+          {"year": "2020", "title": "离开华为，成为自由职业者", "text": "参与宠物相关的创业项目等，以新冠疫情为契机，转向更自由的工作方式。"},
+          {"year": "2024", "title": "进入 Waseda Business School", "text": "下定决心通过 MBA 重新学习，进入早稻田大学经营管理研究科（Waseda Business School）。"},
+          {"year": "2026.3", "title": "完成 MBA 学业", "text": "写完硕士论文，顺利毕业。", "photo": "photos/story/bride-12.jpg"}
+        ]
+      },
+      "groom": {
+        "role": "GROOM", "name": "喬由樹", "latin": "Takayuki", "portrait": "../images/groom.webp",
+        "items": [
+          {"year": "1994.6", "title": "出生于新宿", "text": "出生在母亲是口译、父亲经营鳗鱼店的家庭。7个月、约1800克的早产儿，在保温箱里住了一个月，后来平安健康地长大。名字里寄托着“希望他像一棵高大而自由的树一样成长”的心愿。", "photo": "photos/story/groom-01.jpg"},
+          {"year": "幼年", "title": "新百合丘，还有北京", "text": "搬到父亲的鳗鱼店附近——新百合丘。父亲用不太流利的中文热心地教他汉诗，在双语环境中长大。每逢长假就被送到北京的祖父母家，在当地的幼儿园和小学短期就读。因为讨厌用汉字写笔画繁多的名字，据说还抱怨过“为什么不取个简单点的名字”。", "photo": "photos/story/groom-02.jpg"},
+          {"year": "小学二年级起", "title": "一直在日本", "text": "从小学二年级起一直在日本生活。重视教育的父亲在家里整面窗户上装了黑板，屋里因此变暗，如今也成了美好的回忆。非常喜欢棒球，常和父亲、朋友在公园练习。", "photo": "photos/story/groom-03.jpg"},
+          {"year": "初高中", "title": "圣光学院", "text": "通过初中入学考试进入横滨的圣光学院。在初高中一贯制的6年里，结识了至今仍相互切磋的重要朋友。棒球部因伤几乎没能上场，高中时成了“回家部”。相应地，一有机会就策划旅行和看棒球比赛，圣光祭时每年都担任摊位店长，生意兴隆。把看似难以团结的成员，不知怎么就组织成一支井然有序的队伍，是他从那时起的拿手好戏。", "photo": "photos/story/groom-04.jpg"},
+          {"year": "大学", "title": "东京大学经济学部", "text": "被分到由入学前已掌握外语的学生组成的国际班，社团是棒球观赛。在中文班结识了背景相似的朋友，开始四处寻找地道中餐。去语言不通的文化圈旅行成为爱好，也是从这时开始的。", "photo": "photos/story/groom-05.jpg"},
+          {"year": "留学", "title": "北京大学", "text": "为了追寻自己的根，前往北京大学留学。也结识了从早稻田来的留学生同期。在与当地学生一起修读的中国政治概论课上，还有机会作为学生代表之一进行演讲。", "photo": "photos/story/groom-06.jpg"},
+          {"year": "留学末期", "title": "父亲骤逝，走上口译之路", "text": "留学即将结束时，挚爱的父亲骤然离世。虽以最快速度赶回，却没能见到最后一面。在悲痛中未能充分准备研究生考试，经熟人介绍，以口译身份加入华为。"},
+          {"year": "现在", "title": "“交给森先生就没问题”", "text": "工作之余，周末去口译学校进修，口译才华就此绽放。重要的商务谈判、会议和媒体应对都有他的身影，深受各部门信赖，如今以日本和中国为中心飞往各地。座右铭是做易懂、易听、让人感觉不到存在的口译。据说在公司内外，不知为何“交给森先生就没问题”已成了通行的说法。", "photo": "photos/story/groom-08.jpg"}
+        ]
+      }
+    },
+    "chapter2": {
+      "en": "CHAPTER II", "title": "相遇", "hero": "photos/story/meet-hero.jpg",
+      "items": [
+        {"year": "2018.4", "title": "在新员工入职培训上", "text": "在华为的新员工入职培训（NEO）上，以口译和新员工的身份相识。因为同龄人很多，几个人一起吃了饭，还建了个“90后群”，但那个群聊此后再也没人说过话。", "photo": "photos/story/meet-01.jpg"},
+        {"year": "2018〜", "title": "偶尔午餐，偶尔闲聊", "text": "背景相似、很合得来，开始交流工作信息、闲聊，趁着去对方办公室的机会一起吃午饭。"},
+        {"year": "2020〜", "title": "细水长流的挚友", "text": "百慧离开华为，又因疫情期间搬家而联系变少，但生日和新年的问候从未间断。每一两年会一起喝下午茶或小酌，一聊就是好几个小时。完全没有恋爱的感觉，是既能聊正经工作、也能聊无聊闲话的挚友。", "photo": "photos/story/meet-03.jpg"}
+      ]
+    },
+    "chapter3": {
+      "en": "CHAPTER III", "title": "从相恋到未来",
+      "items": [
+        {"year": "2024", "title": "联系再度增多", "text": "百慧进入 WBS 就读，搬回东西线沿线，联系一下子频繁起来。身边结婚的人越来越多，聊恋爱和未来的话题也多了。仔细想想，彼此想法一致、频率相合，都能举一反三、心领神会，不知不觉已成为可以安心托付后背的人。"},
+        {"year": "2025.2.1", "title": "开始交往", "text": "不知不觉从普通朋友变成了近似恋人的关系，以结婚为前提正式开始交往。之后是马不停蹄的半年，拜访了双方父母。", "photo": "photos/story/love-02.jpg"},
+        {"year": "2025.7.9", "title": "求婚", "text": "在百慧生日那天，用108朵红玫瑰求婚。", "photo": "photos/story/love-03.jpg"},
+        {"year": "2025.8", "title": "两家见面，搬入新居", "text": "完成两家见面，安了新家。", "photo": "photos/story/love-04.jpg"},
+        {"year": "2025 秋", "title": "百慧赴上海交换留学", "text": "百慧赴上海的 MBA 课程交换留学。", "photo": "photos/story/love-05.jpg"},
+        {"year": "2026.2.1", "title": "递交结婚登记", "text": "百慧回国后，在交往一周年纪念日递交了结婚登记。其实那天也是硕士论文答辩的日子。", "photo": "photos/story/love-06.jpg"},
+        {"year": "2026.5.4", "title": "在苏州举行婚礼", "text": "在中国苏州举行了婚礼。", "photo": "photos/story/love-07.jpg"}
+      ]
+    },
+    "honeymoon_en": "HONEYMOON", "honeymoon_title": "2026.8 蜜月旅行",
+    "honeymoon": [
+      {"en": "Bordeaux", "ja": "波尔多", "text": "心心念念的酒庄参观♡", "photos": ["photos/honeymoon/bordeaux-01.jpg", "photos/honeymoon/bordeaux-02.jpg", "photos/honeymoon/bordeaux-03.jpg"]},
+      {"en": "Paris", "ja": "巴黎", "text": "沉醉于艺术的日子。想去的地方太多，时间根本不够！ 酒店房间里还有一座神秘的楼梯。", "photos": ["photos/honeymoon/paris-01.jpg", "photos/honeymoon/paris-02.jpg", "photos/honeymoon/paris-03.jpg"]},
+      {"en": "Roma", "ja": "罗马", "text": "进入梵蒂冈城国！ 当天往返的庞贝之行把我们晒得黑黑的…", "photos": ["photos/honeymoon/roma-01.jpg", "photos/honeymoon/roma-02.jpg", "photos/honeymoon/roma-03.jpg"]},
+      {"en": "Venezia", "ja": "威尼斯", "text": "在离岛的度假酒店悠闲度过。", "photos": ["photos/honeymoon/venezia-01.jpg", "photos/honeymoon/venezia-02.jpg", "photos/honeymoon/venezia-03.jpg"]}
+    ],
+    "closing": {"year": "2026.9.26", "text": "今天，与各位在一起。"}
+  },
+
+  "menu": {
+    "hero": "photos/hero/guide.jpg",
+    "kicker": "MENU",
+    "title": "菜品与饮品",
+    "courses_title": "菜品",
+    "courses": [
+      { "no": "I",   "name": "鹅肝马卡龙", "sub": "可可香气" },
+      { "no": "II",  "name": "低温慢煮挪威三文鱼配酸爽腌渍蔬菜", "sub": "罗勒香汁" },
+      { "no": "III", "name": "森林蘑菇奶油汤", "sub": "卡布奇诺式　松露油风味" },
+      { "no": "IV",  "name": "香煎喜庆鲷鱼配土豆泥", "sub": "马赛鱼汤风味酱汁" },
+      { "no": "V",   "name": "特选牛菲力烤制", "sub": "配蘑菇碎　红酒酱汁" },
+      { "no": "VI",  "name": "橙香火焰可丽饼", "sub": "" }
+    ],
+    "drinks_title": "饮品",
+    "drinks": [
+      { "en": "ALCOHOL", "title": "酒类", "items": [
+        { "k": "红葡萄酒", "v": "Château Sergant（シャトー セルメジャン）" },
+        { "k": "白葡萄酒", "v": "夏布利（William Fèvre）" },
+        { "k": "其他",     "v": "啤酒・日本酒・烧酒・威士忌" }
+      ] },
+      { "en": "SOFT DRINKS", "title": "软饮", "items": [
+        { "k": "果汁", "v": "橙汁・西柚汁" },
+        { "k": "茶",   "v": "乌龙茶" }
+      ] }
+    ],
+    "special": {
+      "en": "FROM THE COUPLE",
+      "title": "两人特别准备的软饮",
+      "items": [
+        { "name": "Paul Giraud 气泡葡萄汁 2025", "body": "直接榨取干邑用葡萄制成、每年限量的珍稀果汁。这次我们有幸迎来少量。请品味其丰盈的甜美与醇和的口感。", "photo": "photos/menu/juice.png", "side": "left" },
+        { "name": "丸七制茶 CRAFT BREW TEA TOKYO", "body": "产自东京东大和的日本红茶。请享受其淡淡的、令人联想到麝香葡萄的香气。", "photo": "photos/menu/tea.png", "side": "right" }
+      ],
+      "note": "数量有限。若能优先让不饮酒的来宾和孩子们品尝，我们将不胜感激。如未能满足您的需求，敬请谅解。"
+    }
+  },
+
+  "marche": {
+    "hero": "photos/hero/guide.jpg",
+    "kicker": "GIFT MARCHÉ",
+    "title": "礼物集市",
+    "intro": "这些是我们满怀感谢之情挑选的礼物。请从回礼中选一件、从回礼点心中选一件，带走您喜欢的。",
+    "hint": "点 ♡ 可将感兴趣的礼物放入 Considering Box 进行比较",
+    "sections": [
+      {
+        "id": "hikidemono", "en": "HIKIDEMONO", "title": "回礼", "note": "请选择一件",
+        "items": [
+          { "id": "g01", "brand": "丽嘉皇家酒店", "name": "Ouverture 红葡萄酒两支装", "detail": "", "photo": "photos/marche/g01.jpg" },
+          { "id": "g02", "brand": "今治谨制", "name": "极上毛巾 面巾2条〈木盒装〉", "detail": "", "photo": "photos/marche/g02.jpg" },
+          { "id": "g03", "brand": "ReFa", "name": "HEART BRUSH", "detail": "蓝色天堂／古典玫瑰／日落光辉／粉色绣球／蓝星花", "photo": "photos/marche/g03.jpg" },
+          { "id": "g04", "brand": "ReFa", "name": "AILE BRUSH", "detail": "玫瑰金／银色", "photo": "photos/marche/g04.jpg" },
+          { "id": "g05", "brand": "ReFa", "name": "LOCK OIL BLOOM 120mL", "detail": "", "photo": "photos/marche/g05.jpg" },
+          { "id": "g06", "brand": "CLAYD", "name": "One Time Gift 泥浆浴盐", "detail": "", "photo": "photos/marche/g06.jpg" },
+          { "id": "g07", "brand": "", "name": "蒸汽热敷眼罩 猫咪礼盒（21片装）", "detail": "", "photo": "photos/marche/g07.jpg" },
+          { "id": "g08", "brand": "煎茶堂东京", "name": "茶叶两罐礼盒", "detail": "白桃煎茶 春绿＋藤枝香／白桃煎茶 春绿＋静7132／柠檬草茶＋薮北本山／柠檬草茶＋奥绿本山／柠檬草茶＋香骏", "photo": "photos/marche/g08.jpg" },
+          { "id": "g09", "brand": "GIN NO MORI", "name": "Petit Bois 150", "detail": "常规版／Autumn", "photo": "photos/marche/g09.jpg" },
+          { "id": "g10", "brand": "L'ABEILLE", "name": "洋槐蜂蜜＋栗子蜂蜜酱 两瓶礼盒", "detail": "", "photo": "photos/marche/g10.jpg" },
+          { "id": "g11", "brand": "MOFT", "name": "8合1多功能支架 兼容MagSafe", "detail": "沙漠金／雾灰", "photo": "photos/marche/g11.jpg" },
+          { "id": "g12", "brand": "shu uemura", "name": "卸妆油", "detail": "", "photo": "photos/marche/g12.jpg" },
+          { "id": "g13", "brand": "Dior", "name": "Addict 丰唇蜜", "detail": "", "photo": "photos/marche/g13.jpg" },
+          { "id": "g14", "brand": "Anker", "name": "旅行转换插头（5合1）", "detail": "", "photo": "photos/marche/g14.jpg" },
+          { "id": "g15", "brand": "TENTIAL", "name": "眼罩", "detail": "", "photo": "photos/marche/g15.jpg" },
+          { "id": "g16", "brand": "Nikka", "name": "From the Barrel 威士忌", "detail": "", "photo": "photos/marche/g16.jpg" },
+          { "id": "g17", "brand": "SHIRO", "name": "CHERISH MY LOVE 护手精华", "detail": "", "photo": "photos/marche/g17.jpg" },
+          { "id": "g18", "brand": "SHIRO", "name": "PEONY BLISS 身体喷雾", "detail": "", "photo": "photos/marche/g18.jpg" },
+          { "id": "g19", "brand": "SHIRO", "name": "White Lily 衣物柔顺剂", "detail": "", "photo": "photos/marche/g19.jpg" },
+          { "id": "g20", "brand": "Santa Maria Novella", "name": "Tavoletta Rosa Novella 香片 2片装", "detail": "", "photo": "photos/marche/g20.jpg" }
+        ]
+      },
+      {
+        "id": "hikigashi", "en": "HIKIGASHI", "title": "回礼点心", "note": "请选择一件",
+        "items": [
+          { "id": "s01", "brand": "丽嘉皇家酒店", "name": "浓厚巧克力蛋糕", "detail": "3个装", "photo": "photos/marche/s01.jpg" },
+          { "id": "s02", "brand": "丽嘉皇家酒店", "name": "蜂蜜玛德琳", "detail": "4个装", "photo": "photos/marche/s02.jpg" },
+          { "id": "s03", "brand": "丽嘉皇家酒店", "name": "榛果焦糖挞", "detail": "", "photo": "photos/marche/s03.jpg" },
+          { "id": "s04", "brand": "丽嘉皇家酒店", "name": "芝士蛋糕", "detail": "", "photo": "photos/marche/s04.jpg" },
+          { "id": "s05", "brand": "PISTACHIO TOKYO", "name": "开心果巧克力", "detail": "", "photo": "photos/marche/s05.jpg" },
+          { "id": "s06", "brand": "益や", "name": "微醺专用套装", "detail": "", "photo": "photos/marche/s06.jpg" },
+          { "id": "s07", "brand": "Mr. CHEESECAKE", "name": "Gift Bag", "detail": "4个装", "photo": "photos/marche/s07.jpg" },
+          { "id": "s08", "brand": "PARIS BUTTER CHOCOLAT", "name": "巴黎黄油巧克力", "detail": "", "photo": "photos/marche/s08.jpg" },
+          { "id": "s09", "brand": "JEAN-PAUL HÉVIN", "name": "Quito", "detail": "", "photo": "photos/marche/s09.jpg" },
+          { "id": "s11", "brand": "PRESS BUTTER SAND", "name": "黄油夹心饼干〈蜜薯〉", "detail": "", "photo": "photos/marche/s11.jpg" },
+          { "id": "s12", "brand": "PRESS BUTTER SAND", "name": "黄油夹心饼干〈栗子〉", "detail": "", "photo": "photos/marche/s12.jpg" }
+        ]
+      }
+    ],
+    "box_note": "决定好后，请到会场的集市专区领取。"
+  },
+
+  "movies": {
+    "hero": "photos/hero/guide.jpg",
+    "kicker": "MOVIES",
+    "title": "当天的影片",
+    "intro": "婚宴当天播放的影片。文件较大，建议在 Wi-Fi 环境下观看。",
+    "play": "播放",
+    "close": "关闭",
+    "quality": "画质",
+    "save": "保存",
+    "empty": "影片正在准备中，请稍候。",
+    "story_link": "观看当天的影片 →"
+  },
+
+  "thanks": {
+    "hero": "photos/hero/guide.jpg",
+    "kicker": "THANK YOU",
+    "title": "感谢您的光临",
+    "intro": "请告诉我们您带回的礼品，也欢迎留下您的感想。将作为我们回礼的参考。",
+    "name_title": "姓名",
+    "name_label": "按姓名・拼音／罗马字搜索",
+    "name_ph": "例：吉永 / Yoshinaga",
+    "name_hint": "输入两个字以上会显示候选，请选择您的姓名。",
+    "name_change": "重新选择",
+    "not_found": "找不到您的姓名？请点这里",
+    "back_to_search": "返回姓名搜索",
+    "free_name": "姓名",
+    "free_email": "邮箱（选填）",
+    "required": "必填",
+    "items_title": "您带回的礼品",
+    "items_hint": "请从回礼和回礼点心中各选一件。在 Gift Marché 点过 ♡ 的礼品会排在前面。",
+    "none": "没有选／不记得了",
+    "message_title": "留言",
+    "message_ph": "给我们的留言（选填）",
+    "left": "还可输入 {n} 字",
+    "submit": "提交",
+    "sending": "提交中…",
+    "done": "谢谢！我们会认真阅读每一条留言。",
+    "sent": "已提交。",
+    "edit": "修改内容",
+    "err_name": "请选择或输入您的姓名。",
+    "err_email": "请确认邮箱格式。",
+    "err_send": "提交失败，请在信号良好的地方重试。",
+    "err_busy": "提交过于频繁，请稍后再试。",
+    "err_long": "留言最多250字。"
+  },
+
+  "links": {
+    "photos": "https://wedding-photos.forest-mm.com/",
+    "invitation": "/zh/"
+  }
+}

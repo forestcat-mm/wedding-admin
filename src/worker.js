@@ -14,6 +14,8 @@
      PUT  /api/media/object?key=      小さいファイル（ポスター画像）を 1 回で保存
      POST /api/media/sign             <video>/<img> で開くための期限付き URL（GET /api/media/object?…&sig=）
      POST /api/media/delete           movies/<slug>/ 配下をまとめて削除、または key を 1 つ削除
+     POST /api/media/image            コンテンツの画像（multipart: file・section）→ guide/<section>/<file>（00_spec/07_cms_admin.md）
+     GET  /api/admin/config           管理画面が使う URL（PHOTO TOSS の管理画面・ゲスト向けサイト）。管理者のみ
    ムービーのファイルは R2（binding: MEDIA、バケット wedding-media）。仕様：00_spec/06_modes_admin.md
    DB アクセスはすべてサービスロールキー（Secret: SUPABASE_SERVICE_ROLE_KEY）。
    Cookie の署名は Secret: RECEPTION_COOKIE_SECRET（HMAC-SHA256）。
@@ -34,6 +36,7 @@ export default {
       if (url.pathname.startsWith('/r/')) return await shortLink(request, env, url);
       if (url.pathname.startsWith('/api/reception/')) return await receptionApi(request, env, url, ctx);
       if (url.pathname.startsWith('/api/media/')) return await mediaApi(request, env, url);
+      if (url.pathname === '/api/admin/config') return await adminConfig(request, env);
       if (url.pathname.startsWith('/api/')) return noStore(json({ error: 'not_found' }, 404));
     } catch (e) {
       return noStore(json({ error: 'server_error', message: String(e?.message || e) }, 500));
@@ -352,6 +355,10 @@ const MEDIA_IMAGE_MAX = 10 * 1024 * 1024;                    /* ポスター画�
 const MEDIA_SIGN_SEC = 6 * 3600;
 const MEDIA_KEY = /^movies\/[a-z0-9-]+\/[A-Za-z0-9_-]+\.(mp4|jpg)$/;
 const MEDIA_PREFIX = /^movies\/[a-z0-9-]+\/$/;
+/* コンテンツ（ゲスト向けサイトの文章・写真）の画像。ゲスト側では media/guide/<section>/<file> として参照する */
+const GUIDE_KEY = /^guide\/[a-z0-9_]+\/[a-z0-9][a-z0-9_-]*\.(jpg|png|webp)$/;
+const GUIDE_EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+const isMediaKey = k => MEDIA_KEY.test(k) || GUIDE_KEY.test(k);
 const isVideoKey = k => MEDIA_KEY.test(k) && k.endsWith('.mp4');
 const isPosterKey = k => MEDIA_KEY.test(k) && k.endsWith('/poster.jpg');
 
@@ -417,11 +424,27 @@ async function mediaApi(request, env, url) {
     await env.MEDIA.put(key, buf, { httpMetadata: { contentType: 'image/jpeg' } });
     return noStore(json({ ok: true, key, size: buf.byteLength }));
   }
+  if (rest === 'image') {
+    if (request.method !== 'POST') return bad('method', 405);
+    if (Number(request.headers.get('content-length')) > MEDIA_IMAGE_MAX + 64 * 1024) return bad('image_size', 413);
+    let form;
+    try { form = await request.formData(); } catch { return bad('multipart'); }
+    const file = form.get('file'), section = String(form.get('section') || '');
+    if (!/^[a-z0-9_]+$/.test(section)) return bad('bad_section');
+    if (!file || typeof file === 'string') return bad('no_file');
+    const buf = await file.arrayBuffer();
+    if (!buf.byteLength || buf.byteLength > MEDIA_IMAGE_MAX) return bad('image_size', 413);
+    const type = sniffImage(new Uint8Array(buf, 0, Math.min(12, buf.byteLength)));   /* 申告の type ではなく中身で判定 */
+    if (!type) return bad('image_type');
+    const key = `guide/${section}/${fileBase(form.get('name') || file.name)}-${randHex(3)}.${GUIDE_EXT[type]}`;
+    await env.MEDIA.put(key, buf, { httpMetadata: { contentType: type } });
+    return noStore(json({ ok: true, key, path: `media/${key}`, size: buf.byteLength, content_type: type }));
+  }
   if (rest === 'sign') {
     if (request.method !== 'POST') return bad('method', 405);
     const body = await readJson(request);
     const keys = Array.isArray(body?.keys) ? body.keys : [body?.key];
-    if (!keys.length || keys.length > 50 || !keys.every(k => MEDIA_KEY.test(k || ''))) return bad('bad_key');
+    if (!keys.length || keys.length > 50 || !keys.every(k => isMediaKey(k || ''))) return bad('bad_key');
     const exp = Math.floor(Date.now() / 1000) + MEDIA_SIGN_SEC;
     const urls = {};
     for (const k of keys) urls[k] = `/api/media/object?key=${encodeURIComponent(k)}&exp=${exp}&sig=${await mediaSig(env, k, exp)}`;
@@ -431,7 +454,7 @@ async function mediaApi(request, env, url) {
     if (request.method !== 'POST') return bad('method', 405);
     const body = await readJson(request);
     if (body?.key) {
-      if (!MEDIA_KEY.test(body.key)) return bad('bad_key');
+      if (!isMediaKey(body.key)) return bad('bad_key');
       await env.MEDIA.delete(body.key);
       return noStore(json({ ok: true, deleted: 1 }));
     }
@@ -448,10 +471,24 @@ async function mediaApi(request, env, url) {
   return noStore(json({ error: 'not_found' }, 404));
 }
 
+/* 画像の種類（JPEG・PNG・WebP 以外は null） */
+function sniffImage(b) {
+  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
+  if (b.length >= 8 && [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((v, i) => b[i] === v)) return 'image/png';
+  if (b.length >= 12 && String.fromCharCode(...b.slice(0, 4)) === 'RIFF' && String.fromCharCode(...b.slice(8, 12)) === 'WEBP') return 'image/webp';
+  return null;
+}
+/* 元のファイル名から R2 のキーに使える部分だけ残す（日本語だけの名前は img） */
+function fileBase(name) {
+  const b = String(name || '').replace(/\.[^.]*$/, '').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/-+/g, '-').replace(/^[-_]+|[-_]+$/g, '').slice(0, 40);
+  return b || 'img';
+}
+const randHex = n => [...crypto.getRandomValues(new Uint8Array(n))].map(x => x.toString(16).padStart(2, '0')).join('');
+
 /* GET/HEAD /api/media/object?key=&exp=&sig=（Range 対応） */
 async function signedGet(request, env, url) {
   const key = url.searchParams.get('key') || '', exp = Number(url.searchParams.get('exp')), sig = url.searchParams.get('sig') || '';
-  if (!MEDIA_KEY.test(key) || !Number.isFinite(exp) || exp * 1000 < Date.now()) return noStore(json({ error: 'forbidden' }, 403));
+  if (!isMediaKey(key) || !Number.isFinite(exp) || exp * 1000 < Date.now()) return noStore(json({ error: 'forbidden' }, 403));
   if (!timingSafeEqual(sig, await mediaSig(env, key, exp))) return noStore(json({ error: 'forbidden' }, 403));
   return serveR2(request, env.MEDIA, key, 'private, max-age=3600');
 }
@@ -485,6 +522,14 @@ async function serveR2(request, bucket, key, cacheControl) {
   }
   h.set('content-length', String(length));
   return new Response(head ? null : obj.body, { status, headers: h });
+}
+
+/* ---------------- 管理画面の設定（GET /api/admin/config） ---------------- */
+/* URL だけを返す（トークンは含めない）。PHOTOS_ADMIN_URL・GUEST_SITE_URL は wrangler.toml の vars */
+async function adminConfig(request, env) {
+  if (request.method !== 'GET') return noStore(json({ error: 'method' }, 405));
+  if (!(await authenticateAdmin(request, env))) return noStore(json({ error: 'unauthorized' }, 401));
+  return noStore(json({ ok: true, photos_admin_url: env.PHOTOS_ADMIN_URL || '', guest_site_url: env.GUEST_SITE_URL || '' }));
 }
 
 /* ---------------- 案内ページ ---------------- */

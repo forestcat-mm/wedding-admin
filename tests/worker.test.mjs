@@ -248,3 +248,35 @@ r = await post('/api/media/delete', { prefix: 'movies/opening/' }); b = await r.
 ok('06 media: delete prefix removes only that movie', b.deleted === 2 && !store.has('movies/opening/720p.mp4') && store.has('movies/profile/720p.mp4'));
 r = await post('/api/media/delete', { prefix: 'movies/' });
 ok('06 media: delete prefix must be one movie', r.status === 400);
+
+// 07_cms: POST /api/media/image（コンテンツの画像）と GET /api/admin/config。どちらも管理者の Bearer だけ
+const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+const imgForm = (data, section = 'story', name = 'Meet 01.PNG', type = 'image/png') => {
+  const f = new FormData(); f.set('section', section); f.set('file', new Blob([data], { type }), name); return f;
+};
+r = await req('/api/media/image', { method: 'POST', body: imgForm(png) });
+ok('07 image: without auth → 401', r.status === 401);
+r = await req('/api/media/image', { method: 'POST', headers: { cookie }, body: imgForm(png) });
+ok('07 image: reception cookie → 401', r.status === 401);
+r = await req('/api/media/image', { method: 'POST', headers: { authorization: 'Bearer good' }, body: imgForm(png) }); b = await r.json();
+ok('07 image: png saved under guide/<section>/', r.status === 200 && /^guide\/story\/meet-01-[0-9a-f]{6}\.png$/.test(b.key)
+   && b.path === 'media/' + b.key && store.get(b.key)?.meta?.contentType === 'image/png');
+const guideKey = b.key;
+r = await req('/api/media/image', { method: 'POST', headers: { authorization: 'Bearer good' }, body: imgForm(bytes('<svg/>'), 'story', 'x.png') });
+ok('07 image: content that is not jpeg/png/webp → 400', r.status === 400);
+r = await req('/api/media/image', { method: 'POST', headers: { authorization: 'Bearer good' }, body: imgForm(png, '../x') });
+ok('07 image: bad section → 400', r.status === 400);
+r = await req('/api/media/image', { method: 'POST', headers: { authorization: 'Bearer good' }, body: imgForm(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]), 'marche', '写真.jpeg', 'image/jpeg') }); b = await r.json();
+ok('07 image: japanese file name → img-xxxxxx.jpg', /^guide\/marche\/img-[0-9a-f]{6}\.jpg$/.test(b.key));
+r = await req('/api/media/image', { method: 'POST', headers: { authorization: 'Bearer good' }, body: imgForm(new Uint8Array(10 * 1024 * 1024 + 1).fill(0xff)) });
+ok('07 image: over 10MB → 413', r.status === 413);
+r = await post('/api/media/sign', { keys: [guideKey] }); b = await r.json();
+r = await req(b.urls[guideKey]);
+ok('07 image: signed GET of a guide key', r.status === 200 && r.headers.get('content-type') === 'image/png');
+r = await post('/api/media/sign', { key: 'guide/../secret.jpg' });
+ok('07 image: sign rejects keys outside movies/ and guide/', r.status === 400);
+r = await req('/api/admin/config');
+ok('07 config: without auth → 401', r.status === 401);
+env.PHOTOS_ADMIN_URL = 'https://photos.example/admin/'; env.GUEST_SITE_URL = 'https://guest.example';
+r = await req('/api/admin/config', { headers: { authorization: 'Bearer good' } }); b = await r.json();
+ok('07 config: urls for admins', b.photos_admin_url === 'https://photos.example/admin/' && b.guest_site_url === 'https://guest.example');

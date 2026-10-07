@@ -26,22 +26,39 @@
 </div></div>
 
 <header><div class="hd">
+  <button class="navtgl" id="nav-tgl" type="button" title="メニューを折りたたむ／開く" aria-label="メニュー">☰</button>
   <div class="brand">RSVP ADMIN<small>M &amp; T — 2026.9.26</small></div>
-  <nav id="nav">
-    <button class="on" data-v="dash">ダッシュボード</button>
-    <button data-v="guests">ゲスト一覧</button>
-    <button data-v="photos">投稿写真</button>
-    <button data-v="budget">予算</button>
-    <button data-v="gifts">ご祝儀</button>
-    <button data-v="seating">配席</button>
-    <button data-v="circles">友人圏・シェア</button>
-    <button data-v="reception">受付トークン</button>
-    <button data-v="site">公開設定</button>
-    <button data-v="movies">Movies</button>
-    <button data-v="feedback">ギフト＆感想</button>
-  </nav>
   <div class="me"><span id="me-mail"></span> ｜ <button class="btn link" id="logout">ログアウト</button></div>
-</div></header>
+</div>
+<!-- タブ（00_spec/07_cms_admin.md §4）。PC は左サイドバー、1024px 未満はグループのセグメント＋横スクロールのタブ -->
+<nav id="nav" aria-label="メニュー">
+  <div class="nseg" id="nav-seg">
+    <button type="button" data-g="guest">ゲスト</button><button type="button" data-g="gift">ギフト</button><button type="button" data-g="site">公開サイト</button><button type="button" data-g="settings">設定</button>
+  </div>
+  <div class="ngrp" data-g="guest"><button type="button" class="ngh">ゲスト</button><div class="nitems">
+    <button type="button" class="on" data-v="dash">ダッシュボード</button>
+    <button type="button" data-v="guests">ゲスト一覧</button>
+    <button type="button" data-v="photos">投稿写真</button>
+    <button type="button" data-v="seating">配席</button>
+    <button type="button" data-v="reception">受付トークン</button>
+  </div></div>
+  <div class="ngrp" data-g="gift"><button type="button" class="ngh">ギフト</button><div class="nitems">
+    <button type="button" data-v="gifts">ご祝儀</button>
+    <button type="button" data-v="feedback">ギフト＆感想</button>
+    <button type="button" data-v="budget">予算</button>
+  </div></div>
+  <div class="ngrp" data-g="site"><button type="button" class="ngh">公開サイト</button><div class="nitems">
+    <button type="button" data-v="site">公開設定</button>
+    <button type="button" data-v="contents">コンテンツ</button>
+    <button type="button" data-v="movies">Movies</button>
+    <a class="nx nx-m" data-photos-admin target="_blank" rel="noopener noreferrer" hidden>PHOTO TOSS 管理 ↗</a>
+  </div></div>
+  <div class="ngrp" data-g="settings"><button type="button" class="ngh">設定</button><div class="nitems">
+    <button type="button" data-v="circles">友人圏・シェア</button>
+  </div></div>
+  <a class="nx nx-pc" data-photos-admin target="_blank" rel="noopener noreferrer" hidden>PHOTO TOSS 管理 ↗</a>
+</nav>
+</header>
 
 <main>
 
@@ -374,7 +391,29 @@
     <p class="note" style="margin:10px 0 0" id="fb-count"></p>
   </div>
 </section>
-</main>
+
+<!-- ===== コンテンツ（00_spec/07_cms_admin.md §3） ===== -->
+<section class="view" id="v-contents">
+  <h2>コンテンツ</h2>
+  <p class="sub">ゲスト向けサイト（wedding.forest-mm.com）の Guide に出す文章・写真。保存するとゲスト側には最大 60 秒（キャッシュ）で反映されます。ムービー自体は Movies タブ、出すページは公開設定タブで決めます。</p>
+  <div class="ctwrap">
+    <div class="ctside" id="ct-side"></div>
+    <div class="ctmain">
+      <div class="panel ctbar"><div class="row" style="margin:0">
+        <span class="seg" id="ct-lang"></span>
+        <span class="note" id="ct-meta"></span>
+        <span class="sp"></span>
+        <span class="tag wait" id="ct-dirty" hidden>未保存の変更あり</span>
+        <button class="btn o s" id="ct-discard">変更を破棄</button>
+        <button class="btn o s" id="ct-preview" title="ゲスト向けサイトを新しいタブで開きます（保存済みの内容）">プレビュー ↗</button>
+        <button class="btn o s" id="ct-import">JSON から取り込む</button>
+        <button class="btn s" id="ct-save">保存</button>
+      </div></div>
+      <div id="ct-err"></div>
+      <div id="ct-form"><p class="note">読み込み中…</p></div>
+    </div>
+  </div>
+</section>
 
 
 <!-- ===== BUDGET ===== -->
@@ -476,6 +515,7 @@
     <div class="tblwrap"><table class="btbl"><thead><tr><th>氏名</th><th>Side</th><th class="num">お車代</th><th>お車代備考</th><th>個別ギフト</th><th></th></tr></thead><tbody id="b-gc"></tbody></table></div>
   </div>
 </section>
+</main>
 
 <!-- ===== MODALS ===== -->
 <div class="modal" id="m-photo"><div class="mbox pbox" id="m-photo-box"></div></div>
@@ -499,6 +539,7 @@
 <div class="modal" id="m-confirm"><div class="mbox" id="m-confirm-box" style="width:440px"></div></div>
 <div class="modal" id="m-mv"><div class="mbox wide" id="m-mv-box"></div></div>
 <div class="modal" id="m-fb"><div class="mbox" id="m-fb-box"></div></div>
+<div class="modal" id="m-ct"><div class="mbox wide" id="m-ct-box"></div></div>
 
 <!-- B4: 空席をクリックしたときの配席ポップオーバー -->
 <div class="seatpop off" id="sv-pop"></div>
